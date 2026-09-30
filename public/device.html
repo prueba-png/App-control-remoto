@@ -23,6 +23,7 @@
         <li class="flex items-center gap-2"><input type="checkbox" id="optTelemetry" checked class="accent-indigo-500"> Estado del dispositivo (batería, red, almacenamiento)</li>
         <li class="flex items-center gap-2"><input type="checkbox" id="optGeo" class="accent-indigo-500"> Ubicación (GPS)</li>
       </ul>
+      <p id="screenNote" class="hidden text-amber-400 text-xs mb-4 -mt-3"></p>
       <button id="startBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-3 rounded-xl disabled:opacity-40">
         Conectar y compartir
       </button>
@@ -47,6 +48,24 @@
   <script>
     const $ = (id) => document.getElementById(id);
     const targetId = new URL(location.href).searchParams.get('id');
+
+    // Screen sharing from the browser is unavailable on iOS (Apple blocks
+    // getDisplayMedia in Safari AND in Chrome/Firefox for iOS, which all use
+    // WebKit). Detect it and degrade gracefully instead of crashing.
+    const canScreen = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+    const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (!canScreen) {
+      const opt = $('optScreen');
+      opt.checked = false;
+      opt.disabled = true;
+      opt.closest('li').classList.add('opacity-40');
+      const note = $('screenNote');
+      note.textContent = isIOS
+        ? 'Compartir pantalla no está disponible en iPhone/iPad (Apple no lo permite en ningún navegador). Se compartirán estado y ubicación. Para ver pantalla, usa un móvil Android con Chrome.'
+        : 'Este navegador no permite compartir pantalla. Usa Chrome en Android/ordenador. Se compartirán estado y ubicación.';
+      note.classList.remove('hidden');
+    }
 
     let peer, mediaConn, dataConn, screenStream, telemetryTimer, geoWatch;
 
@@ -75,15 +94,22 @@
       const wantGeo = $('optGeo').checked;
 
       try {
+        $('err').classList.add('hidden');
         // The browser forces a visible permission prompt here and shows a
         // persistent "sharing your screen" indicator for the whole session.
-        if (wantScreen) {
-          screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-          mediaConn = peer.call(targetId, screenStream);
-          screenStream.getVideoTracks()[0].addEventListener('ended', endSession);
+        // If screen capture isn't available (iOS) or the user cancels it, we
+        // still connect and share whatever else was selected.
+        if (wantScreen && canScreen) {
+          try {
+            screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+            mediaConn = peer.call(targetId, screenStream);
+            screenStream.getVideoTracks()[0].addEventListener('ended', endSession);
+          } catch (e) {
+            showError('No se compartió la pantalla (' + (e.name || 'cancelado') + '). Se continúa con estado y ubicación.');
+          }
         }
 
-        // Data channel for telemetry + location.
+        // Data channel for telemetry + location — always opened.
         dataConn = peer.connect(targetId, { reliable: true });
         dataConn.on('open', () => {
           if (wantTelemetry) startTelemetry();
@@ -92,7 +118,7 @@
         dataConn.on('data', (d) => { if (d && d.action === 'stop') endSession(); });
         dataConn.on('close', endSession);
 
-        showActive(wantScreen, wantTelemetry, wantGeo);
+        showActive(!!screenStream, wantTelemetry, wantGeo);
       } catch (e) {
         showError('No se pudo iniciar: ' + (e.message || e));
       }

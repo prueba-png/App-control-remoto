@@ -130,7 +130,12 @@
     peer.on('connection', (conn) => {
       controlConn = conn;
       conn.on('data', (d) => renderTelemetry(d));
-      conn.on('open', () => log('Canal de datos abierto (telemetría/ubicación).'));
+      conn.on('open', () => {
+        setStatus('Dispositivo conectado', true);
+        $('stopBtn').classList.remove('hidden');
+        $('videoHint').textContent = 'Conectado. (Si es un iPhone, no puede enviar pantalla; verás estado y ubicación a la derecha.)';
+        log('Dispositivo conectado. Recibiendo estado/ubicación.');
+      });
     });
 
     function renderTelemetry(d) {
