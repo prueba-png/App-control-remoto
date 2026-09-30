@@ -122,6 +122,19 @@
       setStatus('Error: ' + err.type);
     });
 
+    // Mobile browsers suspend background tabs and drop the broker connection.
+    // Reconnect when we come back to the foreground, and check periodically,
+    // so the pairing link keeps working without regenerating it.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && peer && peer.disconnected && !peer.destroyed) {
+        log('Panel en primer plano; reconectando al broker…');
+        try { peer.reconnect(); } catch {}
+      }
+    });
+    setInterval(() => {
+      if (peer && peer.disconnected && !peer.destroyed) { try { peer.reconnect(); } catch {} }
+    }, 5000);
+
     // Device shares its screen -> arrives here as an incoming call.
     peer.on('call', (call) => {
       call.answer(); // we don't send media back

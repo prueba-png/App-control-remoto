@@ -37,6 +37,7 @@
         Conectar y compartir
       </button>
       <p id="hint" class="text-slate-500 text-xs mt-3">Preparando conexión…</p>
+      <p id="diag" class="text-slate-500 text-xs mt-1 font-mono"></p>
       <p id="err" class="hidden text-rose-400 text-sm mt-3"></p>
     </section>
 
@@ -104,6 +105,31 @@
       $('err').classList.remove('hidden');
     }
 
+    // Live diagnostics: shows the real ICE state so we can see WHERE it fails.
+    // "checking" que nunca pasa a "connected" = no hay TURN y estáis en redes
+    // distintas. "connected/completed" = enlace de red OK.
+    function watchIce(conn) {
+      if (!conn) return;
+      let done = false;
+      const iv = setInterval(() => {
+        const pc = conn.peerConnection;
+        if (pc && !done) {
+          done = true;
+          clearInterval(iv);
+          const upd = () => {
+            const s = pc.iceConnectionState;
+            $('diag').textContent = 'Red: ' + s + (window.HAS_TURN ? ' · TURN✓' : ' · sin TURN (solo misma WiFi)');
+            if (s === 'failed') {
+              showError('La red no permite la conexión directa. Estáis en redes distintas y no hay TURN configurado. Solución: (A) poned los dos móviles en la MISMA WiFi, o (B) configura un TURN gratis (te digo cómo).');
+            }
+          };
+          pc.addEventListener('iceconnectionstatechange', upd);
+          upd();
+        }
+      }, 300);
+      setTimeout(() => clearInterval(iv), 25000);
+    }
+
     $('startBtn').addEventListener('click', async () => {
       const wantScreen = $('optScreen').checked && canScreen;
       const wantCamera = $('optCamera').checked;
@@ -153,11 +179,13 @@
           mediaStream = new MediaStream(tracks);
           mediaConn = peer.call(targetId, mediaStream);
           tracks.forEach((t) => t.addEventListener('ended', endSession));
+          watchIce(mediaConn);
         }
 
         // Data channel for telemetry + location + sensors — always opened.
         $('hint').textContent = 'Conectando con el panel…';
         dataConn = peer.connect(targetId, { reliable: true });
+        watchIce(dataConn);
 
         let opened = false;
         const timeout = setTimeout(() => {
