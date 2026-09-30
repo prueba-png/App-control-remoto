@@ -1,0 +1,23 @@
+# Despliegue en 1 clic del servidor de señalización en Render (https://render.com).
+#
+# Pasos:
+#   1. Entra en https://dashboard.render.com/blueprints y conecta este repo.
+#   2. Render leerá este archivo y creará el servicio automáticamente.
+#   3. Copia la URL pública que te dé (https://...onrender.com) y pégala en
+#      public/config.js como  window.SIGNALING_URL = 'wss://...onrender.com';
+#      (cambia https:// por wss://). Haz commit → Pages se actualiza solo.
+#
+# Nota: el plan gratuito de Render "duerme" tras inactividad; la primera
+# conexión tras un rato tarda unos segundos en despertar. Para "siempre activo"
+# usa un plan de pago o Fly.io/Railway.
+services:
+  - type: web
+    name: app-control-remoto-signaling
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

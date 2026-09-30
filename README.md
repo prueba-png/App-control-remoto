@@ -80,6 +80,40 @@ Para conexiones fiables entre redes distintas, añade tu propio servidor TURN
 (p. ej. [coturn](https://github.com/coturn/coturn)) en `ICE_SERVERS` dentro de
 `public/rtc.js`.
 
+## Despliegue en producción (URL permanente)
+
+El sistema tiene **dos piezas** que se despliegan por separado:
+
+### 1. Frontend → GitHub Pages (automático)
+
+Cada push a `main` publica la carpeta `public/` en GitHub Pages mediante
+`.github/workflows/deploy-pages.yml`. La URL es permanente y con HTTPS (lo que
+habilita los permisos de pantalla y ubicación en el navegador):
+
+```
+https://<usuario>.github.io/<repo>/
+```
+
+### 2. Servidor de señalización → host con Node
+
+Pages **no** ejecuta `server.js`. Despliega el servidor en un host de Node:
+
+- **Render:** conecta el repo en https://dashboard.render.com/blueprints — el
+  `render.yaml` incluido lo configura solo.
+- **Railway / Fly.io:** usa el `Dockerfile` incluido.
+
+Cuando tengas la URL del servidor (p. ej. `https://algo.onrender.com`), edita
+`public/config.js`:
+
+```js
+window.SIGNALING_URL = 'wss://algo.onrender.com'; // https → wss
+```
+
+Haz commit → Pages se actualiza y el panel ya conecta con tu servidor.
+
+> Para pruebas rápidas también puedes añadir `?signal=wss://tu-servidor` a la
+> URL del panel sin tocar `config.js`.
+
 ## Migración a Next.js
 
 El panel está hecho como HTML+Tailwind para que funcione sin build. Si quieres

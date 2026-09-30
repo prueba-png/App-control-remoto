@@ -8,9 +8,20 @@ export const ICE_SERVERS = [
   // { urls: 'turn:your-turn-host:3478', username: '...', credential: '...' },
 ];
 
-export function connectSignaling(onMessage) {
+// Resolve the signaling server URL. On GitHub Pages (a static host that can't
+// run server.js) set window.SIGNALING_URL in config.js to your deployed
+// signaling server, e.g. "wss://mi-servidor.onrender.com". A ?signal=... query
+// param overrides it for quick testing. Falls back to same-origin (local dev).
+export function signalingUrl() {
+  const override = new URL(location.href).searchParams.get('signal');
+  if (override) return override;
+  if (window.SIGNALING_URL) return window.SIGNALING_URL;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${proto}://${location.host}`);
+  return `${proto}://${location.host}`;
+}
+
+export function connectSignaling(onMessage) {
+  const ws = new WebSocket(signalingUrl());
   ws.addEventListener('message', (e) => {
     let msg;
     try { msg = JSON.parse(e.data); } catch { return; }
