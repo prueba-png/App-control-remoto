@@ -18,12 +18,21 @@
         compartir. Verás un aviso visible mientras la sesión esté activa y podrás
         detenerla cuando quieras.
       </p>
-      <ul class="text-sm space-y-2 mb-5">
-        <li class="flex items-center gap-2"><input type="checkbox" id="optScreen" checked class="accent-indigo-500"> Compartir pantalla</li>
+      <ul class="text-sm space-y-2 mb-4">
+        <li class="flex items-center gap-2"><input type="checkbox" id="optScreen" checked class="accent-indigo-500"> Compartir pantalla <span class="text-slate-500 text-xs">(solo Android)</span></li>
+        <li class="flex flex-wrap items-center gap-2">
+          <input type="checkbox" id="optCamera" class="accent-indigo-500"> Cámara en directo
+          <select id="camFacing" class="bg-slate-800 rounded-lg px-2 py-1 text-xs">
+            <option value="environment">Trasera</option>
+            <option value="user">Frontal</option>
+          </select>
+        </li>
+        <li class="flex items-center gap-2"><input type="checkbox" id="optMic" class="accent-indigo-500"> Micrófono (audio)</li>
         <li class="flex items-center gap-2"><input type="checkbox" id="optTelemetry" checked class="accent-indigo-500"> Estado del dispositivo (batería, red, almacenamiento)</li>
         <li class="flex items-center gap-2"><input type="checkbox" id="optGeo" class="accent-indigo-500"> Ubicación (GPS)</li>
+        <li class="flex items-center gap-2"><input type="checkbox" id="optMotion" class="accent-indigo-500"> Sensores de movimiento / orientación</li>
       </ul>
-      <p id="screenNote" class="hidden text-amber-400 text-xs mb-4 -mt-3"></p>
+      <p id="screenNote" class="hidden text-amber-400 text-xs mb-4 -mt-2"></p>
       <button id="startBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-3 rounded-xl disabled:opacity-40">
         Conectar y compartir
       </button>
@@ -67,7 +76,7 @@
       note.classList.remove('hidden');
     }
 
-    let peer, mediaConn, dataConn, screenStream, telemetryTimer, geoWatch;
+    let peer, mediaConn, dataConn, mediaStream, telemetryTimer, geoWatch, motionHandler;
 
     if (!targetId) {
       showError('Enlace inválido: falta el identificador de sesión. Genera uno nuevo desde el panel.');
@@ -96,27 +105,57 @@
     }
 
     $('startBtn').addEventListener('click', async () => {
-      const wantScreen = $('optScreen').checked;
+      const wantScreen = $('optScreen').checked && canScreen;
+      const wantCamera = $('optCamera').checked;
+      const wantMic = $('optMic').checked;
       const wantTelemetry = $('optTelemetry').checked;
       const wantGeo = $('optGeo').checked;
+      const wantMotion = $('optMotion').checked;
 
       try {
         $('err').classList.add('hidden');
-        // The browser forces a visible permission prompt here and shows a
-        // persistent "sharing your screen" indicator for the whole session.
-        // If screen capture isn't available (iOS) or the user cancels it, we
-        // still connect and share whatever else was selected.
-        if (wantScreen && canScreen) {
+
+        // Build ONE media stream from the selected sources. Each getUserMedia /
+        // getDisplayMedia call forces a visible OS permission prompt and lights
+        // the camera/mic/screen indicator for the whole session. Nothing is
+        // activated remotely: only what you tick here, after you allow it.
+        const tracks = [];
+        let sharedScreen = false, sharedCamera = false, sharedMic = false;
+
+        if (wantCamera) {
+          // Camera (+ mic in the same request if selected) is the video source.
           try {
-            screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-            mediaConn = peer.call(targetId, screenStream);
-            screenStream.getVideoTracks()[0].addEventListener('ended', endSession);
-          } catch (e) {
-            showError('No se compartió la pantalla (' + (e.name || 'cancelado') + '). Se continúa con estado y ubicación.');
+            const cam = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: $('camFacing').value }, audio: wantMic,
+            });
+            cam.getTracks().forEach((t) => tracks.push(t));
+            sharedCamera = true;
+            if (wantMic) sharedMic = true;
+          } catch (e) { showError('Cámara no compartida (' + (e.name || 'cancelado') + ').'); }
+        } else {
+          if (wantScreen) {
+            try {
+              const scr = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+              scr.getVideoTracks().forEach((t) => tracks.push(t));
+              sharedScreen = true;
+            } catch (e) { showError('Pantalla no compartida (' + (e.name || 'cancelado') + ').'); }
+          }
+          if (wantMic) {
+            try {
+              const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+              mic.getAudioTracks().forEach((t) => tracks.push(t));
+              sharedMic = true;
+            } catch (e) { showError('Micrófono no compartido (' + (e.name || 'cancelado') + ').'); }
           }
         }
 
-        // Data channel for telemetry + location — always opened.
+        if (tracks.length) {
+          mediaStream = new MediaStream(tracks);
+          mediaConn = peer.call(targetId, mediaStream);
+          tracks.forEach((t) => t.addEventListener('ended', endSession));
+        }
+
+        // Data channel for telemetry + location + sensors — always opened.
         $('hint').textContent = 'Conectando con el panel…';
         dataConn = peer.connect(targetId, { reliable: true });
 
@@ -124,16 +163,17 @@
         const timeout = setTimeout(() => {
           if (!opened) {
             showError('No se pudo conectar con el panel. Comprueba: (1) el panel sigue ABIERTO y en primer plano en tu OTRO móvil (no vale la misma pantalla en otra pestaña), (2) el enlace es reciente — si hace rato, genera uno nuevo, (3) si están en redes distintas, prueba con los dos en la misma WiFi.');
-            if (screenStream) { try { screenStream.getTracks().forEach((t) => t.stop()); } catch {} screenStream = null; }
+            if (mediaStream) { try { mediaStream.getTracks().forEach((t) => t.stop()); } catch {} mediaStream = null; }
           }
         }, 15000);
 
         dataConn.on('open', () => {
           opened = true;
           clearTimeout(timeout);
-          showActive(!!screenStream, wantTelemetry, wantGeo);
+          showActive({ screen: sharedScreen, camera: sharedCamera, mic: sharedMic, telemetry: wantTelemetry, geo: wantGeo, motion: wantMotion });
           if (wantTelemetry) startTelemetry();
           if (wantGeo) startGeo();
+          if (wantMotion) startMotion();
         });
         dataConn.on('data', (d) => { if (d && d.action === 'stop') endSession(); });
         dataConn.on('close', endSession);
@@ -142,13 +182,16 @@
       }
     });
 
-    function showActive(screen, telemetry, geo) {
+    function showActive(s) {
       $('consent').classList.add('hidden');
       $('active').classList.remove('hidden');
       const items = [];
-      if (screen) items.push('Pantalla');
-      if (telemetry) items.push('Estado del dispositivo');
-      if (geo) items.push('Ubicación');
+      if (s.screen) items.push('Pantalla');
+      if (s.camera) items.push('Cámara');
+      if (s.mic) items.push('Micrófono');
+      if (s.telemetry) items.push('Estado del dispositivo');
+      if (s.geo) items.push('Ubicación');
+      if (s.motion) items.push('Sensores de movimiento');
       $('sharingList').innerHTML = items.map((i) => `<li>• ${i}</li>`).join('');
     }
 
@@ -189,12 +232,34 @@
       );
     }
 
+    async function startMotion() {
+      // On iOS 13+ motion/orientation needs an explicit permission request,
+      // which must happen from a user gesture (the "Conectar" tap qualifies).
+      try {
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+          const res = await DeviceOrientationEvent.requestPermission();
+          if (res !== 'granted') return;
+        }
+      } catch {}
+      let last = 0;
+      motionHandler = (e) => {
+        const now = Date.now();
+        if (now - last < 500) return; // throttle to 2/s
+        last = now;
+        const a = Math.round(e.alpha || 0), b = Math.round(e.beta || 0), g = Math.round(e.gamma || 0);
+        try { dataConn.send({ motion: `α ${a}° · β ${b}° · γ ${g}°` }); } catch {}
+      };
+      window.addEventListener('deviceorientation', motionHandler);
+    }
+
     function endSession() {
-      try { screenStream?.getTracks().forEach((t) => t.stop()); } catch {}
+      try { mediaStream?.getTracks().forEach((t) => t.stop()); } catch {}
       try { mediaConn?.close(); } catch {}
       try { dataConn?.close(); } catch {}
       clearInterval(telemetryTimer);
       if (geoWatch != null) navigator.geolocation.clearWatch(geoWatch);
+      if (motionHandler) { window.removeEventListener('deviceorientation', motionHandler); motionHandler = null; }
       $('active').classList.add('hidden');
       $('consent').classList.remove('hidden');
       $('hint').textContent = 'Sesión finalizada. Puedes volver a conectar.';

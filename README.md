@@ -30,11 +30,27 @@ software espía.
 
 ## Módulos
 
-| Módulo | API del navegador | Consentimiento |
-|--------|-------------------|----------------|
-| Pantalla en vivo | `getDisplayMedia` (WebRTC) | Prompt del SO + indicador de compartición |
-| Batería / red / almacenamiento | `getBattery`, `navigator.connection`, `storage.estimate` | Casilla en el cliente |
-| Ubicación en mapa | `navigator.geolocation` | Prompt del SO |
+| Módulo | API del navegador | Consentimiento | iPhone | Android |
+|--------|-------------------|----------------|:------:|:------:|
+| Pantalla en vivo | `getDisplayMedia` | Prompt + indicador | ❌ (Apple) | ✅ |
+| Cámara (frontal/trasera) | `getUserMedia` | Prompt + piloto de cámara | ✅ | ✅ |
+| Micrófono | `getUserMedia` | Prompt + piloto | ✅ | ✅ |
+| Batería / red / almacenamiento | `getBattery`, `connection`, `storage` | Casilla | ⚠️ limitado | ✅ |
+| Ubicación en mapa | `geolocation` | Prompt del SO | ✅ | ✅ |
+| Movimiento / orientación | `DeviceOrientationEvent` | Prompt (iOS) | ✅ | ✅ |
+
+Todas las capturas de medios (cámara, micro, pantalla) las **activa el usuario del
+dispositivo** con su casilla y el prompt del sistema; nunca se activan de forma
+remota ni oculta. No es posible por navegador (ni se incluye) leer notificaciones
+o mensajes del sistema, acceder a toda la galería en segundo plano, ni controlar
+el táctil del otro móvil.
+
+## Instalar como app
+
+El panel es una **PWA**: en el móvil, abre la URL y usa *"Añadir a pantalla de
+inicio"* (iPhone: botón compartir → Añadir a inicio; Android: aparece un botón
+"Instalar app"). Se abre como una app a pantalla completa. En los móviles que
+controlas **no se instala nada**: solo abren un enlace en el navegador.
 
 ## Estructura
 

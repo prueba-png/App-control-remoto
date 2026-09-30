@@ -4,6 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Panel de Soporte Remoto</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Control" />
+  <meta name="theme-color" content="#4F46E5" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
   <script src="./config.js"></script>
@@ -68,6 +73,10 @@
           <div class="bg-slate-800 rounded-xl p-3">
             <div class="text-slate-400 text-xs">Ubicación</div>
             <div id="geo" class="text-sm font-semibold">—</div>
+          </div>
+          <div class="bg-slate-800 rounded-xl p-3 col-span-2">
+            <div class="text-slate-400 text-xs">Orientación / movimiento</div>
+            <div id="motion" class="text-sm font-semibold">—</div>
           </div>
         </div>
         <a id="mapLink" href="#" target="_blank" class="hidden text-indigo-400 text-sm hover:underline">Ver en el mapa ↗</a>
@@ -152,6 +161,7 @@
         $('mapLink').href = url;
         $('mapLink').classList.remove('hidden');
       }
+      if (d.motion) $('motion').textContent = d.motion;
     }
 
     $('genBtn').addEventListener('click', () => {
@@ -173,6 +183,21 @@
     $('stopBtn').addEventListener('click', () => {
       if (controlConn) controlConn.send({ action: 'stop' });
       log('Solicitada la finalización de la sesión.');
+    });
+
+    // ---- Instalar como app (PWA) ----
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+    }
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const b = document.createElement('button');
+      b.textContent = '📲 Instalar app';
+      b.className = 'ml-2 text-xs bg-emerald-700 hover:bg-emerald-600 px-3 py-1 rounded-full';
+      b.onclick = async () => { b.remove(); deferredPrompt.prompt(); deferredPrompt = null; };
+      $('status').after(b);
     });
   </script>
 </body>
