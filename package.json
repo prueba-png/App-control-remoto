@@ -1,0 +1,13 @@
+{
+  "name": "remote-support-panel",
+  "version": "0.1.0",
+  "description": "Self-hosted, consent-based remote support panel for your own devices (screen share, telemetry, location) over WebRTC.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

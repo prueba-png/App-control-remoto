@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Panel de Soporte Remoto</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <div class="max-w-6xl mx-auto p-4 sm:p-6">
+    <header class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-xl font-semibold">Panel de Soporte Remoto</h1>
+        <p class="text-slate-400 text-sm">Sesión con consentimiento · cifrada de extremo a extremo (WebRTC)</p>
+      </div>
+      <span id="status" class="text-xs px-3 py-1 rounded-full bg-slate-800 text-slate-300">Desconectado</span>
+    </header>
+
+    <!-- Pairing -->
+    <section class="bg-slate-900 rounded-2xl p-5 mb-6 border border-slate-800">
+      <div class="flex flex-wrap items-center gap-3">
+        <button id="genBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-2 rounded-xl">
+          Generar enlace de soporte
+        </button>
+        <p class="text-slate-400 text-sm">Ábrelo en tu propio dispositivo. El enlace caduca en 10 min y es de un solo uso.</p>
+      </div>
+      <div id="linkBox" class="hidden mt-4">
+        <label class="text-xs text-slate-400">Enlace de vinculación</label>
+        <div class="flex gap-2 mt-1">
+          <input id="linkInput" readonly class="flex-1 bg-slate-800 rounded-lg px-3 py-2 text-sm text-indigo-300" />
+          <button id="copyBtn" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm">Copiar</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="grid lg:grid-cols-3 gap-6">
+      <!-- Screen -->
+      <section class="lg:col-span-2 bg-slate-900 rounded-2xl p-5 border border-slate-800">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-medium">Pantalla del dispositivo</h2>
+          <button id="stopBtn" class="hidden text-xs text-rose-300 hover:text-rose-200">Finalizar sesión</button>
+        </div>
+        <div class="aspect-video bg-black rounded-xl overflow-hidden grid place-items-center">
+          <video id="remoteVideo" autoplay playsinline class="w-full h-full object-contain"></video>
+          <p id="videoHint" class="text-slate-500 text-sm absolute">Esperando a que el dispositivo comparta la pantalla…</p>
+        </div>
+      </section>
+
+      <!-- Telemetry -->
+      <section class="bg-slate-900 rounded-2xl p-5 border border-slate-800 space-y-4">
+        <h2 class="font-medium">Estado del dispositivo</h2>
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <div class="bg-slate-800 rounded-xl p-3">
+            <div class="text-slate-400 text-xs">Batería</div>
+            <div id="battery" class="text-lg font-semibold">—</div>
+          </div>
+          <div class="bg-slate-800 rounded-xl p-3">
+            <div class="text-slate-400 text-xs">Red</div>
+            <div id="network" class="text-lg font-semibold">—</div>
+          </div>
+          <div class="bg-slate-800 rounded-xl p-3">
+            <div class="text-slate-400 text-xs">Almacenamiento</div>
+            <div id="storage" class="text-lg font-semibold">—</div>
+          </div>
+          <div class="bg-slate-800 rounded-xl p-3">
+            <div class="text-slate-400 text-xs">Ubicación</div>
+            <div id="geo" class="text-sm font-semibold">—</div>
+          </div>
+        </div>
+        <a id="mapLink" href="#" target="_blank" class="hidden text-indigo-400 text-sm hover:underline">Ver en el mapa ↗</a>
+        <div>
+          <h3 class="text-slate-400 text-xs mb-1">Registro de actividad</h3>
+          <ul id="log" class="text-xs text-slate-400 space-y-1 max-h-40 overflow-auto"></ul>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ICE_SERVERS, connectSignaling, attachSignaling } from './rtc.js';
+
+    const $ = (id) => document.getElementById(id);
+    const log = (m) => {
+      const li = document.createElement('li');
+      li.textContent = `${new Date().toLocaleTimeString()} · ${m}`;
+      $('log').prepend(li);
+    };
+    const setStatus = (t, ok) => {
+      $('status').textContent = t;
+      $('status').className = `text-xs px-3 py-1 rounded-full ${ok ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 text-slate-300'}`;
+    };
+
+    let pc, handleSignal, send;
+
+    const { send: rawSend } = connectSignaling(async (msg) => {
+      if (msg.type === 'session-created') {
+        const link = `${location.origin}/device?token=${msg.token}`;
+        $('linkInput').value = link;
+        $('linkBox').classList.remove('hidden');
+        log('Enlace de soporte generado.');
+      } else if (msg.type === 'device-online') {
+        setStatus('Dispositivo conectado', true);
+        log('El dispositivo se ha vinculado. Estableciendo conexión…');
+        await startPeer();
+      } else if (msg.type === 'signal') {
+        await handleSignal(msg);
+      } else if (msg.type === 'telemetry') {
+        renderTelemetry(msg.data);
+      } else if (msg.type === 'peer-left') {
+        setStatus('El dispositivo se desconectó');
+        log('El dispositivo cerró la sesión.');
+      }
+    });
+    send = rawSend;
+
+    async function startPeer() {
+      pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      handleSignal = attachSignaling(pc, send);
+      pc.addEventListener('track', (e) => {
+        $('remoteVideo').srcObject = e.streams[0];
+        $('videoHint').classList.add('hidden');
+        $('stopBtn').classList.remove('hidden');
+      });
+      // Panel is the answerer; device creates the offer once it has media.
+    }
+
+    function renderTelemetry(d) {
+      if (d.battery != null) $('battery').textContent = `${d.battery}%${d.charging ? ' ⚡' : ''}`;
+      if (d.network) $('network').textContent = d.network;
+      if (d.storage) $('storage').textContent = d.storage;
+      if (d.geo) {
+        $('geo').textContent = `${d.geo.lat.toFixed(4)}, ${d.geo.lon.toFixed(4)}`;
+        const url = `https://www.openstreetmap.org/?mlat=${d.geo.lat}&mlon=${d.geo.lon}#map=16/${d.geo.lat}/${d.geo.lon}`;
+        $('mapLink').href = url;
+        $('mapLink').classList.remove('hidden');
+      }
+    }
+
+    $('genBtn').addEventListener('click', () => {
+      send({ type: 'create-session' });
+    });
+    $('copyBtn').addEventListener('click', () => {
+      navigator.clipboard.writeText($('linkInput').value);
+      $('copyBtn').textContent = '¡Copiado!';
+      setTimeout(() => ($('copyBtn').textContent = 'Copiar'), 1500);
+    });
+    $('stopBtn').addEventListener('click', () => {
+      send({ type: 'control', action: 'stop' });
+      log('Solicitada la finalización de la sesión.');
+    });
+  </script>
+</body>
+</html>
