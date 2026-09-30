@@ -3,28 +3,30 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Cliente de dispositivo · Soporte remoto</title>
+  <title>Conectar dispositivo · Soporte remoto</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
   <script src="./config.js"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen grid place-items-center p-4">
   <main class="w-full max-w-md">
-    <!-- Consent gate: nothing is shared until the user explicitly opts in. -->
+    <!-- Consent gate: nothing is shared until you tap start. -->
     <section id="consent" class="bg-slate-900 rounded-2xl p-6 border border-slate-800">
-      <h1 class="text-lg font-semibold mb-2">Sesión de soporte remoto</h1>
+      <h1 class="text-lg font-semibold mb-2">Conectar este móvil</h1>
       <p class="text-slate-400 text-sm mb-4">
-        Vas a iniciar una sesión de diagnóstico en <b>este</b> dispositivo. Tú eliges
-        qué compartir. Puedes detenerlo en cualquier momento y verás un aviso visible
-        mientras la sesión esté activa.
+        Vas a conectar <b>este</b> dispositivo con tu panel de control. Elige qué
+        compartir. Verás un aviso visible mientras la sesión esté activa y podrás
+        detenerla cuando quieras.
       </p>
       <ul class="text-sm space-y-2 mb-5">
         <li class="flex items-center gap-2"><input type="checkbox" id="optScreen" checked class="accent-indigo-500"> Compartir pantalla</li>
         <li class="flex items-center gap-2"><input type="checkbox" id="optTelemetry" checked class="accent-indigo-500"> Estado del dispositivo (batería, red, almacenamiento)</li>
         <li class="flex items-center gap-2"><input type="checkbox" id="optGeo" class="accent-indigo-500"> Ubicación (GPS)</li>
       </ul>
-      <button id="startBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-3 rounded-xl">
-        Iniciar sesión y compartir lo seleccionado
+      <button id="startBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-3 rounded-xl disabled:opacity-40">
+        Conectar y compartir
       </button>
+      <p id="hint" class="text-slate-500 text-xs mt-3">Preparando conexión…</p>
       <p id="err" class="hidden text-rose-400 text-sm mt-3"></p>
     </section>
 
@@ -32,47 +34,39 @@
     <section id="active" class="hidden bg-slate-900 rounded-2xl p-6 border border-emerald-800">
       <div class="flex items-center gap-2 mb-2">
         <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-        <h1 class="text-lg font-semibold">Sesión de soporte activa</h1>
+        <h1 class="text-lg font-semibold">Sesión activa</h1>
       </div>
-      <p class="text-slate-400 text-sm mb-4">Estás compartiendo con tu panel de control. Puedes detenerlo cuando quieras.</p>
+      <p class="text-slate-400 text-sm mb-4">Conectado con tu panel de control. Puedes detenerlo cuando quieras.</p>
       <ul id="sharingList" class="text-sm text-emerald-300 space-y-1 mb-5"></ul>
       <button id="endBtn" class="w-full bg-rose-600 hover:bg-rose-500 text-white font-medium px-4 py-3 rounded-xl">
-        Detener y finalizar sesión
+        Detener y finalizar
       </button>
     </section>
   </main>
 
-  <script type="module">
-    import { ICE_SERVERS, connectSignaling, attachSignaling } from './rtc.js';
-
+  <script>
     const $ = (id) => document.getElementById(id);
-    const token = new URL(location.href).searchParams.get('token');
+    const targetId = new URL(location.href).searchParams.get('id');
 
-    let pc, send, screenStream, telemetryTimer, geoWatch;
+    let peer, mediaConn, dataConn, screenStream, telemetryTimer, geoWatch;
 
-    if (!token) showError('Enlace inválido: falta el token de sesión.');
+    if (!targetId) {
+      showError('Enlace inválido: falta el identificador de sesión. Genera uno nuevo desde el panel.');
+      $('startBtn').disabled = true;
+    } else {
+      // Pre-create the peer so that when the user taps "Conectar" the link is
+      // already established — the only manual step left is the OS permission tap.
+      peer = new Peer({ config: window.RTC_CONFIG, debug: 1 });
+      peer.on('open', () => {
+        $('hint').textContent = 'Listo. Pulsa "Conectar y compartir".';
+        $('startBtn').disabled = false;
+      });
+      peer.on('error', (err) => showError('Error de conexión: ' + err.type));
+    }
 
     function showError(m) {
       $('err').textContent = m;
       $('err').classList.remove('hidden');
-    }
-
-    const { send: rawSend } = connectSignaling(async (msg) => {
-      if (msg.type === 'joined') { /* waiting for user to start */ }
-      else if (msg.type === 'error') showError(errText(msg.reason));
-      else if (msg.type === 'signal') await handleSignalRef(msg);
-      else if (msg.type === 'control' && msg.action === 'stop') endSession();
-      else if (msg.type === 'peer-left') endSession();
-    });
-    send = rawSend;
-
-    let handleSignalRef = async () => {};
-
-    function errText(reason) {
-      return {
-        'invalid-or-expired-token': 'El enlace ha caducado o no es válido.',
-        'token-already-used': 'Este enlace ya se usó. Genera uno nuevo desde el panel.',
-      }[reason] || 'Error de conexión.';
     }
 
     $('startBtn').addEventListener('click', async () => {
@@ -81,30 +75,24 @@
       const wantGeo = $('optGeo').checked;
 
       try {
-        pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-        const handleSignal = attachSignaling(pc, send);
-        handleSignalRef = handleSignal;
-
-        // The browser forces a visible permission prompt here, and shows a
+        // The browser forces a visible permission prompt here and shows a
         // persistent "sharing your screen" indicator for the whole session.
         if (wantScreen) {
-          screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-          screenStream.getTracks().forEach((t) => pc.addTrack(t, screenStream));
+          screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+          mediaConn = peer.call(targetId, screenStream);
           screenStream.getVideoTracks()[0].addEventListener('ended', endSession);
         }
 
-        // Device is the offerer.
-        const offer = await pc.createOffer({ offerToReceiveVideo: false });
-        await pc.setLocalDescription(offer);
-        send({ type: 'signal', sdp: pc.localDescription });
-
-        // Tell the server we're joining this session's room.
-        send({ type: 'join-session', token });
+        // Data channel for telemetry + location.
+        dataConn = peer.connect(targetId, { reliable: true });
+        dataConn.on('open', () => {
+          if (wantTelemetry) startTelemetry();
+          if (wantGeo) startGeo();
+        });
+        dataConn.on('data', (d) => { if (d && d.action === 'stop') endSession(); });
+        dataConn.on('close', endSession);
 
         showActive(wantScreen, wantTelemetry, wantGeo);
-
-        if (wantTelemetry) startTelemetry();
-        if (wantGeo) startGeo();
       } catch (e) {
         showError('No se pudo iniciar: ' + (e.message || e));
       }
@@ -136,27 +124,22 @@
       try {
         if (navigator.storage?.estimate) {
           const s = await navigator.storage.estimate();
-          const usedGB = (s.usage / 1e9).toFixed(1);
-          const quotaGB = (s.quota / 1e9).toFixed(1);
-          data.storage = `${usedGB} / ${quotaGB} GB`;
+          data.storage = `${(s.usage / 1e9).toFixed(1)} / ${(s.quota / 1e9).toFixed(1)} GB`;
         }
       } catch {}
       return data;
     }
 
     function startTelemetry() {
-      const tick = async () => send({ type: 'telemetry', data: await collectTelemetry() });
+      const tick = async () => { try { dataConn.send(await collectTelemetry()); } catch {} };
       tick();
       telemetryTimer = setInterval(tick, 5000);
     }
 
     function startGeo() {
-      // Also gated by the browser's mandatory geolocation permission prompt.
+      // Gated by the browser's mandatory geolocation permission prompt.
       geoWatch = navigator.geolocation.watchPosition(
-        (pos) => send({
-          type: 'telemetry',
-          data: { geo: { lat: pos.coords.latitude, lon: pos.coords.longitude } },
-        }),
+        (pos) => { try { dataConn.send({ geo: { lat: pos.coords.latitude, lon: pos.coords.longitude } }); } catch {} },
         () => {},
         { enableHighAccuracy: true, maximumAge: 10000 }
       );
@@ -164,15 +147,17 @@
 
     function endSession() {
       try { screenStream?.getTracks().forEach((t) => t.stop()); } catch {}
-      try { pc?.close(); } catch {}
+      try { mediaConn?.close(); } catch {}
+      try { dataConn?.close(); } catch {}
       clearInterval(telemetryTimer);
       if (geoWatch != null) navigator.geolocation.clearWatch(geoWatch);
       $('active').classList.add('hidden');
       $('consent').classList.remove('hidden');
+      $('hint').textContent = 'Sesión finalizada. Puedes volver a conectar.';
     }
 
     $('endBtn').addEventListener('click', () => {
-      send({ type: 'control', action: 'stop' });
+      try { dataConn?.send({ action: 'stop' }); } catch {}
       endSession();
     });
   </script>

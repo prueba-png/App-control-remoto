@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Panel de Soporte Remoto</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
   <script src="./config.js"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen">
@@ -12,25 +13,26 @@
     <header class="flex items-center justify-between mb-6">
       <div>
         <h1 class="text-xl font-semibold">Panel de Soporte Remoto</h1>
-        <p class="text-slate-400 text-sm">Sesión con consentimiento · cifrada de extremo a extremo (WebRTC)</p>
+        <p class="text-slate-400 text-sm">Conexión P2P real · cifrada de extremo a extremo (WebRTC)</p>
       </div>
-      <span id="status" class="text-xs px-3 py-1 rounded-full bg-slate-800 text-slate-300">Desconectado</span>
+      <span id="status" class="text-xs px-3 py-1 rounded-full bg-slate-800 text-slate-300">Iniciando…</span>
     </header>
 
     <!-- Pairing -->
     <section class="bg-slate-900 rounded-2xl p-5 mb-6 border border-slate-800">
       <div class="flex flex-wrap items-center gap-3">
-        <button id="genBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-2 rounded-xl">
-          Generar enlace de soporte
+        <button id="genBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-2 rounded-xl disabled:opacity-40">
+          Generar enlace para mi otro móvil
         </button>
-        <p class="text-slate-400 text-sm">Ábrelo en tu propio dispositivo. El enlace caduca en 10 min y es de un solo uso.</p>
+        <p class="text-slate-400 text-sm">Ábrelo en tu segundo móvil: se conecta solo (solo tendrás que pulsar "permitir" una vez).</p>
       </div>
       <div id="linkBox" class="hidden mt-4">
-        <label class="text-xs text-slate-400">Enlace de vinculación</label>
+        <label class="text-xs text-slate-400">Enlace de conexión</label>
         <div class="flex gap-2 mt-1">
           <input id="linkInput" readonly class="flex-1 bg-slate-800 rounded-lg px-3 py-2 text-sm text-indigo-300" />
           <button id="copyBtn" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-sm">Copiar</button>
         </div>
+        <div id="qr" class="mt-4 bg-white p-3 rounded-xl w-max"></div>
       </div>
     </section>
 
@@ -41,9 +43,9 @@
           <h2 class="font-medium">Pantalla del dispositivo</h2>
           <button id="stopBtn" class="hidden text-xs text-rose-300 hover:text-rose-200">Finalizar sesión</button>
         </div>
-        <div class="aspect-video bg-black rounded-xl overflow-hidden grid place-items-center">
+        <div class="relative aspect-video bg-black rounded-xl overflow-hidden grid place-items-center">
           <video id="remoteVideo" autoplay playsinline class="w-full h-full object-contain"></video>
-          <p id="videoHint" class="text-slate-500 text-sm absolute">Esperando a que el dispositivo comparta la pantalla…</p>
+          <p id="videoHint" class="text-slate-500 text-sm absolute px-4 text-center">Genera el enlace y ábrelo en tu otro móvil…</p>
         </div>
       </section>
 
@@ -77,9 +79,8 @@
     </div>
   </div>
 
-  <script type="module">
-    import { ICE_SERVERS, connectSignaling, attachSignaling } from './rtc.js';
-
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script>
     const $ = (id) => document.getElementById(id);
     const log = (m) => {
       const li = document.createElement('li');
@@ -91,40 +92,46 @@
       $('status').className = `text-xs px-3 py-1 rounded-full ${ok ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 text-slate-300'}`;
     };
 
-    let pc, handleSignal, send;
+    // Short, unguessable id used both as the PeerJS id and the pairing token.
+    const myId = 'ctl-' + Array.from(crypto.getRandomValues(new Uint8Array(9)))
+      .map((b) => b.toString(36)).join('').slice(0, 12);
 
-    const { send: rawSend } = connectSignaling(async (msg) => {
-      if (msg.type === 'session-created') {
-        const base = location.href.replace(/\/[^/]*$/, '');
-        const link = `${base}/device.html?token=${msg.token}`;
-        $('linkInput').value = link;
-        $('linkBox').classList.remove('hidden');
-        log('Enlace de soporte generado.');
-      } else if (msg.type === 'device-online') {
-        setStatus('Dispositivo conectado', true);
-        log('El dispositivo se ha vinculado. Estableciendo conexión…');
-        await startPeer();
-      } else if (msg.type === 'signal') {
-        await handleSignal(msg);
-      } else if (msg.type === 'telemetry') {
-        renderTelemetry(msg.data);
-      } else if (msg.type === 'peer-left') {
-        setStatus('El dispositivo se desconectó');
-        log('El dispositivo cerró la sesión.');
-      }
+    const peer = new Peer(myId, { config: window.RTC_CONFIG, debug: 1 });
+
+    peer.on('open', () => {
+      setStatus('Listo para conectar');
+      $('genBtn').disabled = false;
+      log('Panel listo. Genera el enlace para tu otro móvil.');
     });
-    send = rawSend;
 
-    async function startPeer() {
-      pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-      handleSignal = attachSignaling(pc, send);
-      pc.addEventListener('track', (e) => {
-        $('remoteVideo').srcObject = e.streams[0];
+    peer.on('error', (err) => {
+      log('Error de conexión: ' + err.type);
+      setStatus('Error: ' + err.type);
+    });
+
+    // Device shares its screen -> arrives here as an incoming call.
+    peer.on('call', (call) => {
+      call.answer(); // we don't send media back
+      setStatus('Dispositivo conectado', true);
+      log('El dispositivo se ha conectado. Recibiendo pantalla…');
+      call.on('stream', (stream) => {
+        $('remoteVideo').srcObject = stream;
         $('videoHint').classList.add('hidden');
         $('stopBtn').classList.remove('hidden');
       });
-      // Panel is the answerer; device creates the offer once it has media.
-    }
+      call.on('close', () => {
+        setStatus('El dispositivo se desconectó');
+        log('Sesión finalizada por el dispositivo.');
+      });
+    });
+
+    // Telemetry + location arrive over a data connection.
+    let controlConn = null;
+    peer.on('connection', (conn) => {
+      controlConn = conn;
+      conn.on('data', (d) => renderTelemetry(d));
+      conn.on('open', () => log('Canal de datos abierto (telemetría/ubicación).'));
+    });
 
     function renderTelemetry(d) {
       if (d.battery != null) $('battery').textContent = `${d.battery}%${d.charging ? ' ⚡' : ''}`;
@@ -139,15 +146,23 @@
     }
 
     $('genBtn').addEventListener('click', () => {
-      send({ type: 'create-session' });
+      const base = location.href.replace(/\/[^/]*$/, '').replace(/\/$/, '');
+      const link = `${base}/device.html?id=${myId}`;
+      $('linkInput').value = link;
+      $('linkBox').classList.remove('hidden');
+      $('qr').innerHTML = '';
+      try { new QRCode($('qr'), { text: link, width: 160, height: 160 }); } catch {}
+      log('Enlace generado. Envíalo o escanea el QR en tu otro móvil.');
     });
+
     $('copyBtn').addEventListener('click', () => {
       navigator.clipboard.writeText($('linkInput').value);
       $('copyBtn').textContent = '¡Copiado!';
       setTimeout(() => ($('copyBtn').textContent = 'Copiar'), 1500);
     });
+
     $('stopBtn').addEventListener('click', () => {
-      send({ type: 'control', action: 'stop' });
+      if (controlConn) controlConn.send({ action: 'stop' });
       log('Solicitada la finalización de la sesión.');
     });
   </script>

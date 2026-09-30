@@ -1,0 +1,5 @@
+# La app es 100% estática (la señalización va por el broker público de PeerJS),
+# así que Netlify solo tiene que publicar la carpeta public/. Sin build.
+[build]
+  publish = "public"
+  command = ""

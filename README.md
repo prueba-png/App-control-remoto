@@ -1,132 +1,75 @@
-# Remote Support Panel
+# App de Control Remoto (soporte remoto entre tus propios dispositivos)
 
-Panel de soporte remoto **autoalojado** y **basado en consentimiento** para
-gestionar tus propios dispositivos desde fuera de casa. Comunicación P2P cifrada
-mediante WebRTC; el servidor solo hace de señalización y nunca ve la pantalla,
-la telemetría ni la ubicación.
+Panel web para conectar tus **propios** móviles y ver su pantalla, estado y
+ubicación desde fuera de casa. Conexión **P2P real** con WebRTC (nada simulado),
+cifrada de extremo a extremo. **No necesitas desplegar ningún servidor**: la
+señalización usa el broker público gratuito de [PeerJS](https://peerjs.com) y la
+conexión atraviesa redes distintas gracias a servidores STUN/TURN públicos.
 
-## Filosofía de diseño
+## Cómo funciona (flujo)
 
-Este proyecto hace soporte remoto **legítimo y visible**, no vigilancia. En la
-práctica eso significa:
+1. Abres el **panel de control** en un móvil y pulsas *"Generar enlace para mi
+   otro móvil"* → aparece un enlace + un **QR**.
+2. Abres ese enlace (o escaneas el QR) en tu **segundo móvil**.
+3. Ese móvil se conecta **solo**. Lo único que tocas es **un toque de "permitir"**
+   cuando el navegador pida compartir pantalla o ubicación — es obligatorio por
+   seguridad del sistema operativo y no se puede (ni se debe) saltar.
+4. En el panel ves en tiempo real: **pantalla**, **batería/red/almacenamiento** y
+   **ubicación en un mapa**.
 
-- Todo lo que se comparte pasa por un **prompt de permiso del sistema operativo**
-  (compartir pantalla, ubicación) que el navegador impone y que no se puede
-  esquivar.
-- El dispositivo muestra un **banner visible** mientras la sesión está activa y
-  puede **detenerla en cualquier momento**.
-- Los enlaces de vinculación son **de un solo uso** y caducan a los 10 minutos.
+Mientras la sesión está activa, el segundo móvil muestra un **aviso visible** y
+puede **detenerla** en cualquier momento.
 
-Deliberadamente **no** incluye —y no se debe añadir— captura remota encubierta
-de cámara, exfiltración de la galería/archivos, ni lectura de notificaciones o
-mensajes: no son funciones de soporte remoto y convierten cualquier panel en
-software de vigilancia.
+## Filosofía: soporte remoto legítimo, no vigilancia
 
-## Módulos incluidos
+Todo lo que se comparte pasa por un **permiso visible del sistema** y el
+dispositivo sabe en todo momento que está compartiendo. Deliberadamente **no**
+incluye captura oculta de cámara, exfiltración de galería/archivos ni lectura de
+mensajes/notificaciones: no son funciones de soporte y convertirían el panel en
+software espía.
 
-| Módulo | API usada | Consentimiento |
-|--------|-----------|----------------|
-| Screen mirroring | `getDisplayMedia` (WebRTC) | Prompt del SO + indicador de compartición |
-| Telemetría (batería/red/almacenamiento) | `getBattery`, `navigator.connection`, `storage.estimate` | Casilla en el cliente |
-| Geolocalización | `navigator.geolocation` | Prompt del SO |
+## Módulos
 
-## Arquitectura
+| Módulo | API del navegador | Consentimiento |
+|--------|-------------------|----------------|
+| Pantalla en vivo | `getDisplayMedia` (WebRTC) | Prompt del SO + indicador de compartición |
+| Batería / red / almacenamiento | `getBattery`, `navigator.connection`, `storage.estimate` | Casilla en el cliente |
+| Ubicación en mapa | `navigator.geolocation` | Prompt del SO |
 
-```
-┌────────────┐   WebSocket (señalización)   ┌────────────┐
-│  Panel web │◀────────────────────────────▶│  Servidor  │
-│ (dashboard)│                               │  Node.js   │
-└─────┬──────┘                               └─────┬──────┘
-      │            WebRTC P2P (E2E)                │
-      │     pantalla + datos + ubicación           │
-      └──────────────◀──────────────▶ ─────────────┘
-                    ┌────────────┐
-                    │  Cliente   │
-                    │ dispositivo│  ← abre el enlace de vinculación
-                    └────────────┘
-```
-
-- `server.js` — servidor HTTP + señalización WebSocket. Sirve los clientes,
-  emite tokens de un solo uso y retransmite SDP/ICE. No almacena ni ve medios.
-- `public/dashboard.html` — panel de control (React-less, Tailwind por CDN).
-- `public/device.html` — cliente que se abre en el dispositivo, con la barrera
-  de consentimiento.
-- `public/rtc.js` — helper WebRTC compartido.
-
-## Uso
-
-```bash
-npm install
-npm start
-# Panel:  http://localhost:3000
-```
-
-1. Abre el panel y pulsa **Generar enlace de soporte**.
-2. Abre ese enlace en tu propio dispositivo (misma red, o expón el servidor con
-   HTTPS — ver abajo).
-3. Elige qué compartir y pulsa iniciar. Acepta los prompts del navegador.
-
-### HTTPS / fuera de tu red
-
-`getDisplayMedia` y la geolocalización requieren un **contexto seguro (HTTPS)**
-salvo en `localhost`. Para usarlo fuera de casa:
-
-- Pon el servidor detrás de un reverse proxy con TLS (Caddy, nginx, Traefik), o
-- Usa un túnel como `cloudflared` / `tailscale funnel` durante las pruebas.
-
-### TURN (redes restrictivas)
-
-Para conexiones fiables entre redes distintas, añade tu propio servidor TURN
-(p. ej. [coturn](https://github.com/coturn/coturn)) en `ICE_SERVERS` dentro de
-`public/rtc.js`.
-
-## Despliegue en producción (URL permanente)
-
-El sistema tiene **dos piezas** que se despliegan por separado:
-
-### 1. Frontend → GitHub Pages (automático)
-
-Cada push a `main` publica la carpeta `public/` en GitHub Pages mediante
-`.github/workflows/deploy-pages.yml`. La URL es permanente y con HTTPS (lo que
-habilita los permisos de pantalla y ubicación en el navegador):
+## Estructura
 
 ```
-https://<usuario>.github.io/<repo>/
+public/
+  dashboard.html   # Panel de control (genera enlace + QR, muestra pantalla/telemetría)
+  device.html      # Cliente del segundo móvil (auto-conexión + consentimiento)
+  config.js        # Servidores ICE (STUN/TURN). Edítalo para usar tu propio TURN.
+netlify.toml       # Publica public/ como sitio estático
+server.js          # (Opcional) señalización propia para modo self-hosted; no hace
+                   #  falta con PeerJS. Ver más abajo.
 ```
 
-### 2. Servidor de señalización → host con Node
+## Requisito para que funcionen los permisos: HTTPS
 
-Pages **no** ejecuta `server.js`. Despliega el servidor en un host de Node:
+`getDisplayMedia` y la geolocalización solo funcionan en **contexto seguro
+(HTTPS)** o en `localhost`. Por eso se publica en un hosting con HTTPS
+(GitHub Pages / Netlify). Abierto por `file://` o HTTP no funcionará.
 
-- **Render:** conecta el repo en https://dashboard.render.com/blueprints — el
-  `render.yaml` incluido lo configura solo.
-- **Railway / Fly.io:** usa el `Dockerfile` incluido.
+## Fiabilidad de la conexión
 
-Cuando tengas la URL del servidor (p. ej. `https://algo.onrender.com`), edita
-`public/config.js`:
+- **Misma WiFi:** conexión directa, siempre funciona.
+- **Redes distintas (WiFi ↔ datos):** se usa TURN público (Open Relay). Para
+  máxima fiabilidad, pon tu propio TURN (coturn) o una cuenta de Metered/Twilio
+  en `public/config.js`.
+- El broker público de PeerJS es gratuito pero orientado a prototipos; si alguna
+  vez falla, puedes autoalojar [PeerServer](https://github.com/peers/peerjs-server)
+  y pasarlo en la config del `Peer`.
 
-```js
-window.SIGNALING_URL = 'wss://algo.onrender.com'; // https → wss
-```
+## Modo self-hosted opcional (sin PeerJS)
 
-Haz commit → Pages se actualiza y el panel ya conecta con tu servidor.
-
-> Para pruebas rápidas también puedes añadir `?signal=wss://tu-servidor` a la
-> URL del panel sin tocar `config.js`.
-
-## Migración a Next.js
-
-El panel está hecho como HTML+Tailwind para que funcione sin build. Si quieres
-Next.js/React: mueve la lógica de `dashboard.html` a un componente cliente
-(`'use client'`), reutiliza `public/rtc.js` tal cual y mantén `server.js` como
-servicio de señalización aparte.
-
-## Próximos pasos sugeridos
-
-- [ ] Autenticación real del panel (login + sesiones) antes de exponerlo.
-- [ ] Servidor TURN propio para conectividad fuera de la LAN.
-- [ ] Empaquetar el cliente de dispositivo como PWA instalable.
-- [ ] Cifrado a nivel de aplicación sobre el canal de datos (además del DTLS de WebRTC).
+Si prefieres no depender de servicios públicos, `server.js` incluye un servidor
+de señalización propio (Node + WebSocket). Ejecuta `npm install && npm start` y
+sirve la app en `http://localhost:3000`. Tendrías que adaptar los clientes para
+usar ese canal en vez de PeerJS.
 
 ## Licencia
 

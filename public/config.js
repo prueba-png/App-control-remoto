@@ -1,14 +1,32 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Configuración del cliente (se carga tanto en el panel como en el dispositivo)
+// Configuración de red (se carga en el panel y en el dispositivo)
 // ─────────────────────────────────────────────────────────────────────────
 //
-// GitHub Pages solo sirve archivos estáticos, así que NO puede ejecutar el
-// servidor de señalización (server.js). Despliega ese servidor en un host que
-// ejecute Node (Render / Railway / Fly) y pega aquí su URL con "wss://".
+// La app usa PeerJS con su broker de señalización público gratuito, así que
+// NO necesitas desplegar ningún servidor. Para que la conexión P2P funcione
+// también entre redes distintas (WiFi ↔ datos móviles) se añaden servidores
+// TURN/STUN públicos gratuitos.
 //
-// Ejemplo:
-//   window.SIGNALING_URL = 'wss://app-control-remoto.onrender.com';
-//
-// Déjalo vacío ('') para desarrollo local con `npm start` (usa el mismo origen).
+// Si algún día quieres máxima fiabilidad, sustituye el TURN por uno propio
+// (coturn) o una cuenta de Metered/Twilio.
 
-window.SIGNALING_URL = '';
+window.RTC_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
+  ],
+};
