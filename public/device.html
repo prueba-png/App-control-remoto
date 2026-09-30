@@ -80,7 +80,14 @@
         $('hint').textContent = 'Listo. Pulsa "Conectar y compartir".';
         $('startBtn').disabled = false;
       });
-      peer.on('error', (err) => showError('Error de conexión: ' + err.type));
+      peer.on('disconnected', () => { try { peer.reconnect(); } catch {} });
+      peer.on('error', (err) => {
+        if (err.type === 'peer-unavailable') {
+          showError('El panel no está disponible. Abre el panel en tu OTRO móvil, mantenlo en primer plano y genera un enlace nuevo.');
+        } else {
+          showError('Error de conexión: ' + err.type);
+        }
+      });
     }
 
     function showError(m) {
@@ -110,15 +117,26 @@
         }
 
         // Data channel for telemetry + location — always opened.
+        $('hint').textContent = 'Conectando con el panel…';
         dataConn = peer.connect(targetId, { reliable: true });
+
+        let opened = false;
+        const timeout = setTimeout(() => {
+          if (!opened) {
+            showError('No se pudo conectar con el panel. Comprueba: (1) el panel sigue ABIERTO y en primer plano en tu OTRO móvil (no vale la misma pantalla en otra pestaña), (2) el enlace es reciente — si hace rato, genera uno nuevo, (3) si están en redes distintas, prueba con los dos en la misma WiFi.');
+            if (screenStream) { try { screenStream.getTracks().forEach((t) => t.stop()); } catch {} screenStream = null; }
+          }
+        }, 15000);
+
         dataConn.on('open', () => {
+          opened = true;
+          clearTimeout(timeout);
+          showActive(!!screenStream, wantTelemetry, wantGeo);
           if (wantTelemetry) startTelemetry();
           if (wantGeo) startGeo();
         });
         dataConn.on('data', (d) => { if (d && d.action === 'stop') endSession(); });
         dataConn.on('close', endSession);
-
-        showActive(!!screenStream, wantTelemetry, wantGeo);
       } catch (e) {
         showError('No se pudo iniciar: ' + (e.message || e));
       }

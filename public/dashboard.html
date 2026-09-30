@@ -104,6 +104,10 @@
       log('Panel listo. Genera el enlace para tu otro móvil.');
     });
 
+    peer.on('disconnected', () => {
+      log('Conexión con el broker perdida; reconectando…');
+      try { peer.reconnect(); } catch {}
+    });
     peer.on('error', (err) => {
       log('Error de conexión: ' + err.type);
       setStatus('Error: ' + err.type);
