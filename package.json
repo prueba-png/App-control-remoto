@@ -1,7 +1,12 @@
 {
   "name": "auraface",
   "version": "0.1.0",
-  "description": "AuraFace",
+  "description": "Vídeos hiperrealistas con tu propio rostro a partir de una foto y un texto.",
   "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "npx --yes serve public",
+    "test": "node --test test/*.test.js"
+  },
   "license": "MIT"
 }
