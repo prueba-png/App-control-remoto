@@ -178,7 +178,7 @@ $('recBtn').onclick = async () => {
 
 // ====================================================== MODO 2: agente
 const EXAMPLE_SCRIPT = `Empresa: Energía Clara.
-Apertura: Hola, le habla el asistente virtual con inteligencia artificial de Energía Clara. Le llamo porque pidió información en nuestra web sobre placas solares. ¿Tiene dos minutos?
+Apertura: Le llamo porque pidió información en nuestra web sobre placas solares. ¿Tiene dos minutos?
 Objetivo: agendar una visita técnica gratuita sobre placas solares.
 
 1. Pregunta si vive en una casa con tejado propio y cuánto paga de luz al mes.
@@ -203,10 +203,15 @@ function scriptCompany(text) {
   return m ? m[1].trim().replace(/\.$/, '') : '';
 }
 
+function agentName() {
+  return $('agentName').value.trim();
+}
+
 function openingLine(text) {
   const company = scriptCompany(text);
   const m = text.match(/^\s*apertura\s*:\s*(.+)$/im);
-  const disclosure = `Hola, le habla un asistente virtual con inteligencia artificial${company ? ' de ' + company : ''}.`;
+  const who = agentName() ? `soy ${agentName()}, asistente virtual` : 'le habla un asistente virtual';
+  const disclosure = `Hola, ${who} con inteligencia artificial${company ? ' de ' + company : ''}.`;
   if (!m) return disclosure + ' ¿Tiene un momento?';
   const opening = m[1].trim();
   return /(asistente virtual|inteligencia artificial|\bIA\b)/i.test(opening) ? opening : `${disclosure} ${opening}`;
@@ -214,17 +219,24 @@ function openingLine(text) {
 
 function systemPrompt(text, opening) {
   const company = scriptCompany(text) || 'la empresa';
-  return `Eres un asistente de voz con inteligencia artificial que atiende una llamada telefónica en nombre de ${company}.
+  const name = agentName() || 'el asistente';
+  return `Eres ${name}, asistente de voz con inteligencia artificial, y estás en una llamada telefónica en nombre de ${company}.
 Tu objetivo y la información que puedes usar están en el guion de abajo.
 
-Cómo hablas:
-- Esto se convierte a voz: responde con 1 a 3 frases cortas y naturales, como en una llamada real.
-- Sin listas, sin emojis, sin markdown. Los números, escritos como se dicen.
+Cómo conversas (lo más importante):
+- Escucha de verdad: responde primero a lo que la persona acaba de decir (su pregunta, su duda, su tono) y solo después avanza en el guion. Nunca ignores lo que te dice para soltar el siguiente paso.
+- Habla como una buena comercial al teléfono: cercana, natural, segura y sin sonar a lectura. Usa expresiones normales («claro», «entiendo», «perfecto», «vale») sin abusar.
+- Una idea y como mucho una pregunta por turno. Frases cortas: lo que digas se convierte en voz.
+- Recuerda lo que te han contado (nombre, situación, horarios) y úsalo después.
+- Si te preguntan algo fuera del guion pero razonable, responde con sentido común y vuelve con suavidad al objetivo. Si no sabes un dato, dilo y ofrece que una persona del equipo le llame.
+- Si la persona está ocupada, ofrece llamar en otro momento y pregunta cuándo le viene bien.
+- Adapta el ritmo: si es breve, sé breve; si tiene dudas, explica con calma.
+- Sin listas, sin emojis, sin markdown. Los números y precios, escritos como se dicen.
 - Responde en el idioma de la otra persona (por defecto, español).
 
 Límites que no se negocian:
-- Eres una IA. Si te preguntan si eres una persona o un robot, di con claridad que eres un asistente virtual con IA.
-- No inventes datos, precios ni condiciones que no estén en el guion. Si no lo sabes, ofrece que una persona del equipo le contacte.
+- Eres una IA. Si te preguntan si eres una persona o un robot, di con naturalidad y claridad que eres un asistente virtual con IA. No digas nunca que eres una persona.
+- No inventes datos, precios ni condiciones que no estén en el guion.
 - Si la persona dice que no le interesa o pide que no la llamen más, despídete con amabilidad, confirma que se respetará y termina.
 - No presiones, no uses urgencias falsas y no pidas contraseñas ni datos bancarios.
 - Cuando la conversación haya terminado, escribe ${END} al final de tu última respuesta.
@@ -236,21 +248,63 @@ ${text}`;
 }
 
 // --- voz sintética del sistema
-let esVoice = null;
-function pickVoice() {
-  const voices = speechSynthesis.getVoices();
-  esVoice = voices.find((v) => v.lang === 'es-ES') || voices.find((v) => v.lang?.startsWith('es')) || null;
+// Puntúa las voces: primero las de mayor calidad (Premium/Mejorada) y de España.
+function voiceScore(v) {
+  let sc = 0;
+  if (/premium/i.test(v.name)) sc += 30;
+  if (/enhanced|mejorada|neural|natural/i.test(v.name)) sc += 20;
+  if (v.lang === 'es-ES') sc += 5;
+  if (!v.localService) sc += 2;
+  return sc;
+}
+function esVoices() {
+  if (!('speechSynthesis' in window)) return [];
+  return speechSynthesis.getVoices().filter((v) => v.lang?.toLowerCase().startsWith('es')).sort((a, b) => voiceScore(b) - voiceScore(a));
+}
+function fillVoices() {
+  const sel = $('voiceSelect');
+  const voices = esVoices();
+  const saved = store.get('voice');
+  sel.innerHTML = '';
+  if (!voices.length) {
+    sel.innerHTML = '<option value="">Voz por defecto del sistema</option>';
+    return;
+  }
+  for (const v of voices) {
+    const o = document.createElement('option');
+    o.value = v.name;
+    const q = /premium/i.test(v.name) ? ' · Premium' : /enhanced|mejorada/i.test(v.name) ? ' · Mejorada' : '';
+    o.textContent = `${v.name} (${v.lang})${q}`;
+    sel.append(o);
+  }
+  sel.value = voices.some((v) => v.name === saved) ? saved : voices[0].name;
+}
+function currentVoice() {
+  return esVoices().find((v) => v.name === $('voiceSelect').value) || null;
 }
 if ('speechSynthesis' in window) {
-  pickVoice();
-  speechSynthesis.onvoiceschanged = pickVoice;
+  fillVoices();
+  speechSynthesis.onvoiceschanged = fillVoices;
 }
+$('voiceSelect').onchange = () => store.set('voice', $('voiceSelect').value);
+$('rate').value = store.get('rate', '1');
+$('rateOut').value = `×${Number($('rate').value).toFixed(2)}`;
+$('rate').oninput = () => { $('rateOut').value = `×${Number($('rate').value).toFixed(2)}`; store.set('rate', $('rate').value); };
+$('agentName').value = store.get('agentName', 'Laura');
+$('agentName').onchange = () => store.set('agentName', $('agentName').value.trim());
+$('testVoice').onclick = () => {
+  speechSynthesis.cancel();
+  speak(`Hola, soy ${agentName() || 'tu asistente'}. Así sonará mi voz durante la llamada.`);
+};
+
 function speak(text) {
   return new Promise((resolve) => {
     if (!('speechSynthesis' in window)) return resolve();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'es-ES';
-    if (esVoice) u.voice = esVoice;
+    const v = currentVoice();
+    u.lang = v?.lang || 'es-ES';
+    if (v) u.voice = v;
+    u.rate = Number($('rate').value) || 1;
     u.onend = u.onerror = () => resolve();
     speechSynthesis.speak(u);
   });
@@ -278,7 +332,8 @@ $('callStart').onclick = () => {
   $('log').innerHTML = '';
   log('info', 'Llamada iniciada. El agente descuelga…');
   log('agente', opening);
-  speak(opening).then(() => status($('agentStatus'), SR ? 'Tu turno: pulsa «Hablar».' : 'Tu turno: escribe tu respuesta.'));
+  emptyTurns = 0;
+  speak(opening).then(() => (SR ? listenNext() : status($('agentStatus'), 'Tu turno: escribe tu respuesta.')));
   $('callStart').disabled = true;
   $('callEnd').disabled = false;
   $('talkBtn').disabled = !SR;
@@ -301,14 +356,23 @@ function endCall(msg) {
   status($('agentStatus'), 'Llamada terminada.');
 }
 
-$('talkBtn').onclick = () => {
-  if (call.rec) { call.rec.stop(); return; }
+let emptyTurns = 0;
+
+function listenNext() {
+  if (!call.active || call.busy || !SR) return;
+  if ($('handsFree').checked) startListening(true);
+  else status($('agentStatus'), 'Tu turno: pulsa «Hablar».');
+}
+
+function startListening(auto = false) {
+  if (call.rec || !call.active || call.busy) return;
   if ('speechSynthesis' in window) speechSynthesis.cancel();
   const rec = new SR();
   rec.lang = 'es-ES';
   rec.interimResults = true;
-  rec.continuous = false;
+  rec.continuous = false; // termina sola cuando dejas de hablar
   let finalText = '';
+  let denied = false;
   rec.onresult = (e) => {
     let interim = '';
     for (const r of e.results) (r.isFinal ? (finalText = r[0].transcript) : (interim += r[0].transcript));
@@ -316,22 +380,44 @@ $('talkBtn').onclick = () => {
   };
   rec.onerror = (e) => {
     if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-      status($('agentStatus'), 'Safari no permite el dictado. Activa Siri y Dictado en Ajustes, o escribe tu respuesta.', true);
-      $('typeForm').hidden = false;
+      denied = true;
+      status($('agentStatus'), auto
+        ? 'Safari no deja escuchar solo: pulsa «Hablar» en cada turno (o activa Siri y Dictado en Ajustes).'
+        : 'Safari no permite el dictado. Activa Siri y Dictado en Ajustes, o escribe tu respuesta.', true);
+      if (!auto) $('typeForm').hidden = false;
     }
   };
   rec.onend = () => {
     call.rec = null;
     $('talkBtn').classList.remove('listening');
     $('talkBtn').textContent = '🎙 Hablar';
-    if (finalText.trim()) handleUser(finalText.trim());
-    else if (call.active && !call.busy) status($('agentStatus'), 'No te he oído. Pulsa «Hablar» otra vez.');
+    if (finalText.trim()) {
+      emptyTurns = 0;
+      handleUser(finalText.trim());
+    } else if (call.active && !call.busy && !denied) {
+      emptyTurns += 1;
+      if (auto && $('handsFree').checked && emptyTurns < 3) startListening(true);
+      else status($('agentStatus'), 'No te he oído. Pulsa «Hablar» cuando quieras contestar.');
+    }
   };
   call.rec = rec;
   $('talkBtn').classList.add('listening');
   $('talkBtn').textContent = '■ Terminar de hablar';
-  status($('agentStatus'), '🎙 Escuchando…');
-  rec.start();
+  status($('agentStatus'), '🎙 Te escucho… habla cuando quieras.');
+  try {
+    rec.start();
+  } catch {
+    call.rec = null;
+    $('talkBtn').classList.remove('listening');
+    $('talkBtn').textContent = '🎙 Hablar';
+    status($('agentStatus'), 'Pulsa «Hablar» para contestar.');
+  }
+}
+
+$('talkBtn').onclick = () => {
+  if (call.rec) { call.rec.stop(); return; }
+  emptyTurns = 0;
+  startListening(false);
 };
 
 $('typeForm').onsubmit = (e) => {
@@ -403,7 +489,8 @@ async function handleUser(text) {
   if (!call.active) return;
   if (finished) return endCall('El agente ha cerrado la conversación.');
   $('talkBtn').disabled = !SR;
-  status($('agentStatus'), SR ? 'Tu turno: pulsa «Hablar».' : 'Tu turno: escribe tu respuesta.');
+  if (SR) listenNext();
+  else status($('agentStatus'), 'Tu turno: escribe tu respuesta.');
 }
 
 function apiError(e) {

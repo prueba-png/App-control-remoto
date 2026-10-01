@@ -66,10 +66,22 @@
     <!-- MODO 2 -->
     <section id="agent" class="card" hidden>
       <h2>Agente autónomo</h2>
-      <p class="hint">Tú haces de cliente que recibe la llamada. Pulsa «Hablar», di tu respuesta y el agente te contesta en voz alta siguiendo el guion.</p>
+      <p class="hint">Tú haces de cliente que recibe la llamada. El agente escucha lo que dices, lo entiende y te responde en voz alta siguiendo el guion, como en una conversación de verdad.</p>
       <label>Guion de ventas
         <textarea id="script" rows="7"></textarea>
       </label>
+      <label>Nombre del agente
+        <input id="agentName" value="Laura" />
+      </label>
+      <label>Voz del agente
+        <select id="voiceSelect"></select>
+      </label>
+      <label>Velocidad al hablar <output id="rateOut">×1.00</output>
+        <input type="range" id="rate" min="0.8" max="1.25" step="0.05" value="1" />
+      </label>
+      <div class="actions"><button id="testVoice" class="ghost">▶ Probar voz</button></div>
+      <p class="hint">Para una voz mucho más real en iPhone: Ajustes → Accesibilidad → Contenido leído → Voces → Español → descarga una voz <b>Mejorada</b> o <b>Premium</b> (por ejemplo Mónica o Jorge) y recarga esta página.</p>
+      <label class="switch"><input type="checkbox" id="handsFree" checked /> <span>Manos libres <small>(escucha sola cuando el agente termina de hablar)</small></span></label>
       <details>
         <summary>Clave y modelo de Claude</summary>
         <label>Clave API de Claude
