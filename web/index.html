@@ -29,6 +29,29 @@
         <select id="micSelect"><option value="">Micrófono por defecto</option></select>
       </label>
 
+      <details id="aiBox" open>
+        <summary><b>Voz realista con IA</b> (recomendado)</summary>
+        <p class="hint">Grabas lo que dices y una IA lo repite con la voz elegida, conservando tu entonación. Las voces son genéricas, no de una persona concreta. Necesitas una cuenta gratuita de <a href="https://elevenlabs.io" target="_blank" rel="noopener">ElevenLabs</a> y tu clave (en su web: perfil → API Keys). La capa gratuita da unos minutos al mes.</p>
+        <label>Clave de ElevenLabs
+          <input id="elKey" type="password" placeholder="sk_…" autocomplete="off" />
+        </label>
+        <label class="switch"><input type="checkbox" id="elRemember" /> <span>Recordarla en este dispositivo</span></label>
+        <div class="actions"><button id="elLoad" class="ghost">Cargar mis voces</button></div>
+        <label>Voz
+          <select id="elVoice"><option value="">Pulsa «Cargar mis voces»</option></select>
+        </label>
+        <label>Duración de la grabación
+          <select id="elSecs"><option value="5">5 segundos</option><option value="10" selected>10 segundos</option><option value="20">20 segundos</option></select>
+        </label>
+        <div class="actions"><button id="elRec" class="primary">● Grabar y convertir con IA</button></div>
+        <audio id="elOut" controls hidden></audio>
+        <p class="status" id="elStatus"></p>
+      </details>
+
+      <details id="fxBox">
+        <summary>Efecto rápido sin IA (cambia tu propia voz)</summary>
+        <p class="hint">No usa internet ni cuenta. Sube o baja el tono y el timbre, pero tu voz se sigue reconociendo por debajo.</p>
+
       <h3>1 · Mide tu voz</h3>
       <p class="hint">Pulsa y habla con normalidad 4 segundos (por ejemplo, cuenta del uno al diez). Así cada voz sale a su tono real.</p>
       <div class="actions"><button id="calibBtn" class="ghost">🎤 Medir mi voz</button></div>
@@ -79,6 +102,7 @@
       </details>
       <div class="meter"><div id="level"></div></div>
       <p class="status" id="liveStatus">Listo.</p>
+      </details>
     </section>
 
     <!-- MODO 2 -->

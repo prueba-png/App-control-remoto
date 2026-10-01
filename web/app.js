@@ -1,6 +1,7 @@
 import { Anthropic } from './vendor/anthropic-sdk-0.131.0.js';
 import { OfflineAgent } from './offline-agent.js';
 import { changeVoice, medianPitch } from './voice-hq.js';
+import { listVoices, convert as elConvert, ElevenLabsError } from './voice-ai.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -275,6 +276,74 @@ $('recBtn').onclick = async () => {
   }
   btn.textContent = '● Grabar y convertir';
   btn.disabled = false;
+};
+
+// ---- Voz realista con IA (ElevenLabs) --------------------------------------
+$('elKey').value = store.get('elKey', '');
+$('elRemember').checked = !!store.get('elKey');
+$('elRemember').onchange = () => { if (!$('elRemember').checked) store.del('elKey'); else store.set('elKey', $('elKey').value.trim()); };
+$('elKey').onchange = () => { if ($('elRemember').checked) store.set('elKey', $('elKey').value.trim()); };
+
+$('elLoad').onclick = async () => {
+  const key = $('elKey').value.trim();
+  if (!key) { status($('elStatus'), 'Pon tu clave de ElevenLabs.', true); return; }
+  if ($('elRemember').checked) store.set('elKey', key);
+  const btn = $('elLoad');
+  btn.disabled = true; btn.textContent = 'Cargando…';
+  try {
+    const voices = await listVoices(key);
+    const sel = $('elVoice');
+    sel.innerHTML = '';
+    const groups = {};
+    for (const v of voices) (groups[v.group] ||= []).push(v);
+    for (const [g, list] of Object.entries(groups)) {
+      const og = document.createElement('optgroup');
+      og.label = g;
+      for (const v of list) {
+        const o = document.createElement('option');
+        o.value = v.id;
+        const tag = [v.labels.gender, v.labels.age].filter(Boolean).join(', ');
+        o.textContent = tag ? `${v.name} (${tag})` : v.name;
+        og.append(o);
+      }
+      sel.append(og);
+    }
+    const saved = store.get('elVoiceId');
+    if (saved && voices.some((v) => v.id === saved)) sel.value = saved;
+    status($('elStatus'), `${voices.length} voces cargadas. Elige una y graba.`);
+  } catch (e) {
+    status($('elStatus'), e instanceof ElevenLabsError ? e.message : 'No se pudieron cargar las voces: ' + (e?.message || e), true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Cargar mis voces';
+  }
+};
+$('elVoice').onchange = () => store.set('elVoiceId', $('elVoice').value);
+
+$('elRec').onclick = async () => {
+  const key = $('elKey').value.trim();
+  const voiceId = $('elVoice').value;
+  if (!key) { status($('elStatus'), 'Pon tu clave de ElevenLabs.', true); return; }
+  if (!voiceId) { status($('elStatus'), 'Pulsa «Cargar mis voces» y elige una voz.', true); return; }
+  const btn = $('elRec');
+  btn.disabled = true;
+  const rec = await recordRaw(Number($('elSecs').value), (sec) => { btn.textContent = `Grabando… ${sec}`; });
+  stopLive();
+  btn.textContent = 'Convirtiendo con IA…';
+  status($('elStatus'), 'Enviando a ElevenLabs… (unos segundos)');
+  try {
+    if (!rec || !rec.audio.length) throw new Error('No se grabó audio.');
+    const wav = toWav(rec.audio, rec.sr);
+    const out = await elConvert(key, voiceId, wav);
+    const a = $('elOut');
+    a.src = URL.createObjectURL(out);
+    a.hidden = false;
+    a.play().catch(() => {});
+    status($('elStatus'), 'Listo. Puedes volver a escucharlo o descargarlo desde el reproductor.');
+  } catch (e) {
+    status($('elStatus'), e instanceof ElevenLabsError ? e.message : 'No se pudo convertir: ' + (e?.message || e), true);
+  } finally {
+    btn.disabled = false; btn.textContent = '● Grabar y convertir con IA';
+  }
 };
 
 showCalibration();
