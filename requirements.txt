@@ -1,0 +1,11 @@
+# VozDual - Python 3.10, 3.11 o 3.12
+customtkinter>=5.2,<7
+sounddevice>=0.4.6
+numpy>=1.24
+soxr>=0.3.7
+# Inferencia ONNX (RVC). Con GPU: cambia por onnxruntime-gpu (NVIDIA)
+# o onnxruntime-directml (Windows, cualquier GPU).
+onnxruntime>=1.17,<2
+faster-whisper>=1.1,<2
+piper-tts>=1.3,<2
+anthropic>=1.11,<2
