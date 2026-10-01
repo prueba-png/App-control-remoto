@@ -18,58 +18,84 @@
     <p class="intro">Esta página reproduce en el navegador cómo funciona la app de escritorio. El iPhone hace de ordenador: como Safari no puede crear un micrófono virtual, el resultado lo oyes por los auriculares o el altavoz en lugar de enviarse a una llamada.</p>
 
     <div class="seg" role="tablist">
-      <button role="tab" id="tabLive" aria-selected="true">Conversión en vivo<small>hablo yo</small></button>
+      <button role="tab" id="tabLive" aria-selected="true">Cambiar mi voz<small>hablo yo</small></button>
       <button role="tab" id="tabAgent" aria-selected="false">Agente autónomo<small>habla la IA</small></button>
     </div>
 
     <!-- MODO 1 -->
     <section id="live" class="card">
-      <h2>Conversión en vivo</h2>
+      <h2>Cambiar mi voz</h2>
       <label>Micrófono
         <select id="micSelect"><option value="">Micrófono por defecto</option></select>
       </label>
-      <label>Tu voz real
+
+      <h3>1 · Mide tu voz</h3>
+      <p class="hint">Pulsa y habla con normalidad 4 segundos (por ejemplo, cuenta del uno al diez). Así cada voz sale a su tono real.</p>
+      <div class="actions"><button id="calibBtn" class="ghost">🎤 Medir mi voz</button></div>
+      <p class="hint" id="calibOut"></p>
+      <label id="baseVoiceRow">Si no la mides, ¿tu voz es…?
         <select id="baseVoice">
-          <option value="m">Soy hombre (voz grave)</option>
-          <option value="f">Soy mujer (voz aguda)</option>
+          <option value="m">De hombre (grave)</option>
+          <option value="f">De mujer (aguda)</option>
         </select>
       </label>
+
+      <h3>2 · Elige la voz</h3>
       <div class="presets" id="presets">
         <button class="chip" data-p="original">Original</button>
-        <button class="chip" data-p="mujer">👩 Mujer</button>
-        <button class="chip" data-p="nino">👦 Niño pequeño</button>
+        <button class="chip" data-p="mujerAguda">👩 Mujer aguda</button>
+        <button class="chip" data-p="mujer">👩 Mujer media</button>
+        <button class="chip" data-p="mujerGrave">👩 Mujer grave</button>
         <button class="chip" data-p="nina">👧 Niña pequeña</button>
+        <button class="chip" data-p="nino">👦 Niño pequeño</button>
+        <button class="chip" data-p="hombreJoven">🧑 Hombre joven</button>
         <button class="chip" data-p="empresario">👔 Empresario</button>
-        <button class="chip" data-p="dibujo">Dibujo animado</button>
       </div>
-      <p class="hint" id="presetHint">Elige una voz. Después puedes afinarla con los deslizadores de abajo.</p>
-      <div class="row">
-        <label class="grow">Tono <output id="semiOut">+0 semitonos</output>
-          <input type="range" id="semi" min="-12" max="12" step="0.5" value="0" />
+      <p class="hint" id="presetHint"></p>
+      <details>
+        <summary>Afinar a mano</summary>
+        <label>Tono <output id="semiOut">+0 semitonos</output>
+          <input type="range" id="semi" min="-18" max="18" step="0.5" value="0" />
         </label>
-      </div>
-      <div class="row">
-        <label class="grow">Timbre <output id="formOut">×1.00</output>
+        <label>Timbre (tamaño de la voz) <output id="formOut">×1.00</output>
           <input type="range" id="formant" min="0.75" max="1.5" step="0.01" value="1" />
         </label>
-      </div>
-      <label class="switch"><input type="checkbox" id="monitor" /> <span>Escuchar en directo <small>(solo con auriculares, si no se acopla)</small></span></label>
+      </details>
+
+      <h3>3 · Escúchala</h3>
+      <label>Duración de la grabación
+        <select id="recSecs"><option value="5">5 segundos</option><option value="10" selected>10 segundos</option><option value="20">20 segundos</option></select>
+      </label>
       <div class="actions">
-        <button id="liveStart" class="primary">Activar micrófono</button>
-        <button id="recBtn" class="ghost" disabled>● Grabar 5 s y escuchar</button>
+        <button id="recBtn" class="primary">● Grabar y convertir</button>
       </div>
-      <div class="meter"><div id="level"></div></div>
-      <p class="status" id="liveStatus">Detenido.</p>
+      <p class="hint">Calidad alta: grabas, se convierte en el móvil y lo escuchas. Es la forma de oír cómo suena de verdad.</p>
       <audio id="playback" controls hidden></audio>
+      <details>
+        <summary>En directo (con auriculares)</summary>
+        <p class="hint">Te oyes transformado mientras hablas. Es más rápido pero suena algo más metálico que la grabación.</p>
+        <label class="switch"><input type="checkbox" id="monitor" /> <span>Escuchar en directo</span></label>
+        <div class="actions"><button id="liveStart" class="ghost">Activar micrófono</button></div>
+      </details>
+      <div class="meter"><div id="level"></div></div>
+      <p class="status" id="liveStatus">Listo.</p>
     </section>
 
     <!-- MODO 2 -->
     <section id="agent" class="card" hidden>
       <h2>Agente autónomo</h2>
       <p class="hint">Tú haces de cliente que recibe la llamada. El agente escucha lo que dices, lo entiende y te responde en voz alta siguiendo el guion, como en una conversación de verdad.</p>
-      <label>Guion de ventas
-        <textarea id="script" rows="7"></textarea>
+      <label>Guion (pega el tuyo)
+        <textarea id="script" rows="9"></textarea>
       </label>
+      <details>
+        <summary>Cómo escribir el guion</summary>
+        <p class="hint">Vale cualquier texto. Para que el modo gratis lo siga mejor:<br>
+        · <b>Apertura:</b> la primera frase que dirá.<br>
+        · Pasos numerados: <i>1. Pregunta si…</i>, <i>2. Explica que…</i>, <i>3. Propón… y pide…</i><br>
+        · Respuestas a objeciones: <i>Si dice que es caro: …</i> o <i>Si pregunta por el precio: …</i><br>
+        Con Claude no hace falta ningún formato: entiende el guion tal cual.</p>
+      </details>
       <label>Nombre del agente
         <input id="agentName" value="Laura" />
       </label>

@@ -77,7 +77,14 @@ class VoiceShifter extends AudioWorkletProcessor {
       if ('formant' in d) this.beta = d.formant;
       if ('bypass' in d) this.bypass = d.bypass;
       if ('gain' in d) this.gain = d.gain;
+      if ('capture' in d) {
+        if (!d.capture && this.capBuf && this.capN) this.port.postMessage({ raw: this.capBuf.slice(0, this.capN) });
+        this.capBuf = d.capture ? new Float32Array(4096) : null;
+        this.capN = 0;
+      }
     };
+    this.capBuf = null;
+    this.capN = 0;
     this.port.postMessage({ ready: true, latency: (this.N + this.H) / sampleRate });
   }
 
@@ -137,6 +144,17 @@ class VoiceShifter extends AudioWorkletProcessor {
     const out = outputs[0];
     const n = out[0].length;
     if (!input) { for (const ch of out) ch.fill(0); return true; }
+    if (this.capBuf) {
+      // Grabación del audio original para la conversión de alta calidad.
+      for (let i = 0; i < input.length; i++) {
+        this.capBuf[this.capN++] = input[i];
+        if (this.capN === this.capBuf.length) {
+          this.port.postMessage({ raw: this.capBuf });
+          this.capBuf = new Float32Array(4096);
+          this.capN = 0;
+        }
+      }
+    }
     for (let i = 0; i < input.length; i++) {
       this.levelSum += input[i] * input[i];
       this.inRing[this.inPos] = input[i];

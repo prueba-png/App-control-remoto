@@ -1,5 +1,6 @@
 import { Anthropic } from './vendor/anthropic-sdk-0.131.0.js';
 import { OfflineAgent } from './offline-agent.js';
+import { changeVoice, medianPitch } from './voice-hq.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -38,7 +39,33 @@ function status(el, text, error = false) {
 }
 
 // ====================================================== MODO 1: conversión
-const live = { ctx: null, stream: null, node: null, gain: null, dest: null, latency: 0 };
+const live = { ctx: null, stream: null, node: null, gain: null, latency: 0, capture: null };
+
+// Voces: tono objetivo real (Hz) y timbre (formantes). El cambio se calcula a
+// partir de TU tono medido, así una voz de mujer suena a mujer partas de donde partas.
+const VOICES = {
+  original: { name: 'Original', hz: null, formant: 1, intonation: 1, hint: 'Tu voz sin cambios.' },
+  mujerAguda: { name: 'Mujer, voz aguda', hz: 235, formant: 1.2, intonation: 1.1, hint: 'Voz femenina joven y clara.' },
+  mujer: { name: 'Mujer, voz media', hz: 205, formant: 1.17, intonation: 1.05, hint: 'Voz femenina adulta, la más neutra.' },
+  mujerGrave: { name: 'Mujer, voz grave', hz: 175, formant: 1.12, intonation: 1, hint: 'Voz femenina madura y profunda.' },
+  nina: { name: 'Niña pequeña', hz: 300, formant: 1.38, intonation: 1.2, hint: 'Habla con frases cortas y entonación alegre.' },
+  nino: { name: 'Niño pequeño', hz: 275, formant: 1.32, intonation: 1.15, hint: 'Habla rápido y con frases sencillas.' },
+  hombreJoven: { name: 'Hombre joven', hz: 135, formant: 1.03, intonation: 1, hint: 'Voz masculina clara y ligera.' },
+  empresario: { name: 'Empresario', hz: 98, formant: 0.93, intonation: 0.85, hint: 'Grave, con cuerpo y entonación firme. Habla despacio y seguro.' },
+};
+let selectedVoice = 'original';
+let userHz = Number(store.get('userHz', '0')) || 0;
+
+function baseHz() {
+  return userHz || ($('baseVoice').value === 'f' ? 205 : 115);
+}
+
+function showCalibration() {
+  $('calibOut').textContent = userHz
+    ? `Tu tono medido: ${Math.round(userHz)} Hz (${userHz < 165 ? 'voz grave, de hombre' : 'voz aguda, de mujer'}).`
+    : 'Sin medir: se usa un tono típico. Mide tu voz para que las voces salgan más reales.';
+  $('baseVoiceRow').hidden = !!userHz;
+}
 
 function sendParams() {
   const s = Number($('semi').value), f = Number($('formant').value);
@@ -48,29 +75,19 @@ function sendParams() {
 }
 $('semi').oninput = sendParams;
 $('formant').oninput = sendParams;
-// Voces predefinidas: [semitonos, timbre] según si tu voz real es de hombre o de mujer.
-// El tono marca lo agudo o grave; el timbre (formantes) el "tamaño" de quien habla.
-const PRESETS = {
-  original: { name: 'Original', m: [0, 1], f: [0, 1], hint: 'Tu voz sin cambios.' },
-  mujer: { name: 'Mujer', m: [5, 1.17], f: [1, 1.03], hint: 'Tono más agudo y timbre más ligero.' },
-  nino: { name: 'Niño pequeño', m: [8, 1.3], f: [3, 1.14], hint: 'Agudo y con timbre pequeño. Habla rápido y con frases cortas para que suene más natural.' },
-  nina: { name: 'Niña pequeña', m: [10, 1.38], f: [5, 1.2], hint: 'La más aguda. Sube un poco la entonación al hablar.' },
-  empresario: { name: 'Empresario', m: [-2, 0.92], f: [-7, 0.83], hint: 'Más grave y con más cuerpo. El aplomo lo pones tú: habla despacio, seguro y sin prisa.' },
-  dibujo: { name: 'Dibujo animado', m: [12, 1.45], f: [7, 1.3], hint: 'Exagerado, para jugar.' },
-};
-let currentPreset = 'original';
-function applyPreset(key) {
-  currentPreset = key;
-  const p = PRESETS[key];
-  const [s, f] = p[$('baseVoice').value];
-  $('semi').value = s;
-  $('formant').value = f;
+
+function applyVoice(key) {
+  selectedVoice = key;
+  const v = VOICES[key];
+  const semis = v.hz ? 12 * Math.log2(v.hz / baseHz()) : 0;
+  $('semi').value = Math.max(-18, Math.min(18, Math.round(semis * 2) / 2));
+  $('formant').value = v.formant;
   document.querySelectorAll('#presets .chip').forEach((c) => c.classList.toggle('on', c.dataset.p === key));
-  $('presetHint').textContent = `${p.name}: ${p.hint}`;
+  $('presetHint').textContent = `${v.name}: ${v.hint}`;
   sendParams();
 }
-document.querySelectorAll('#presets .chip').forEach((c) => (c.onclick = () => applyPreset(c.dataset.p)));
-$('baseVoice').onchange = () => applyPreset(currentPreset);
+document.querySelectorAll('#presets .chip').forEach((c) => (c.onclick = () => applyVoice(c.dataset.p)));
+$('baseVoice').onchange = () => applyVoice(selectedVoice);
 $('monitor').onchange = () => { if (live.gain) live.gain.gain.value = $('monitor').checked ? 1 : 0; };
 
 async function fillMics() {
@@ -90,6 +107,7 @@ async function fillMics() {
 }
 
 async function startLive() {
+  if (live.ctx) return true;
   const btn = $('liveStart');
   btn.disabled = true;
   try {
@@ -97,36 +115,37 @@ async function startLive() {
     live.ctx = new AC({ latencyHint: 'interactive' });
     await live.ctx.resume();
     if (!live.ctx.audioWorklet) throw new Error('Este navegador no admite AudioWorklet. Actualiza iOS o usa Chrome/Safari recientes.');
-    await live.ctx.audioWorklet.addModule('voice-worklet.js');
+    await live.ctx.audioWorklet.addModule('voice-worklet.js?v=3');
     const mic = $('micSelect').value;
     live.stream = await navigator.mediaDevices.getUserMedia({
-      audio: { deviceId: mic ? { exact: mic } : undefined, echoCancellation: false, noiseSuppression: true, autoGainControl: false },
+      audio: { deviceId: mic ? { exact: mic } : undefined, echoCancellation: false, noiseSuppression: true, autoGainControl: true },
     });
     const src = live.ctx.createMediaStreamSource(live.stream);
     live.node = new AudioWorkletNode(live.ctx, 'voice-shifter', { outputChannelCount: [1] });
     live.node.port.onmessage = (e) => {
       if (e.data.latency) live.latency = e.data.latency;
       if (e.data.level != null) $('level').style.width = Math.min(100, e.data.level * 400) + '%';
+      if (e.data.raw && live.capture) live.capture.push(e.data.raw);
     };
     live.gain = live.ctx.createGain();
     live.gain.gain.value = $('monitor').checked ? 1 : 0;
-    live.dest = live.ctx.createMediaStreamDestination();
     src.connect(live.node);
     live.node.connect(live.gain).connect(live.ctx.destination);
-    live.node.connect(live.dest);
     sendParams();
     await fillMics();
     setTimeout(() => {
+      if (!live.ctx) return;
       const ms = ((live.ctx.baseLatency || 0) + (live.ctx.outputLatency || 0) + live.latency) * 1000;
-      status($('liveStatus'), `Micrófono activo · retraso estimado ≈ ${Math.round(ms)} ms · ${live.ctx.sampleRate} Hz`);
+      status($('liveStatus'), `Micrófono activo · retraso en directo ≈ ${Math.round(ms)} ms`);
     }, 300);
     status($('liveStatus'), 'Micrófono activo.');
-    btn.textContent = 'Detener';
+    btn.textContent = 'Detener micrófono';
     btn.onclick = stopLive;
-    $('recBtn').disabled = false;
+    return true;
   } catch (e) {
     status($('liveStatus'), micError(e), true);
     stopLive();
+    return false;
   } finally {
     btn.disabled = false;
   }
@@ -135,13 +154,12 @@ async function startLive() {
 function stopLive() {
   live.stream?.getTracks().forEach((t) => t.stop());
   live.ctx?.close().catch(() => {});
-  Object.assign(live, { ctx: null, stream: null, node: null, gain: null, dest: null });
+  Object.assign(live, { ctx: null, stream: null, node: null, gain: null, capture: null });
   $('level').style.width = '0';
-  $('recBtn').disabled = true;
   const btn = $('liveStart');
   btn.textContent = 'Activar micrófono';
   btn.onclick = startLive;
-  if (!$('liveStatus').classList.contains('error')) status($('liveStatus'), 'Detenido.');
+  if (!$('liveStatus').classList.contains('error')) status($('liveStatus'), 'Micrófono apagado.');
 }
 $('liveStart').onclick = startLive;
 
@@ -151,31 +169,116 @@ function micError(e) {
   return 'No se pudo iniciar: ' + (e?.message || e);
 }
 
-$('recBtn').onclick = async () => {
-  if (!live.dest) return;
-  const btn = $('recBtn');
-  btn.disabled = true;
-  const type = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find((t) => window.MediaRecorder?.isTypeSupported(t));
-  const rec = new MediaRecorder(live.dest.stream, type ? { mimeType: type } : undefined);
-  const chunks = [];
-  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  rec.onstop = () => {
-    const blob = new Blob(chunks, { type: rec.mimeType || type || 'audio/mp4' });
-    const a = $('playback');
-    a.src = URL.createObjectURL(blob);
-    a.hidden = false;
-    stopLive(); // en iPhone, con el micro abierto el sonido sale muy bajo por el auricular
-    a.play().catch(() => {});
-    btn.textContent = '● Grabar 5 s y escuchar';
-    status($('liveStatus'), 'Grabación lista: así suena tu voz transformada.');
-  };
-  rec.start();
-  for (let s = 5; s > 0; s--) {
-    btn.textContent = `Grabando… ${s}`;
+/** Graba `seconds` de audio original del micrófono. Devuelve {audio, sr}. */
+async function recordRaw(seconds, onTick) {
+  if (!(await startLive())) return null;
+  live.capture = [];
+  live.node.port.postMessage({ capture: true });
+  for (let s = seconds; s > 0; s--) {
+    onTick(s);
     await new Promise((r) => setTimeout(r, 1000));
   }
-  rec.stop();
+  live.node?.port.postMessage({ capture: false });
+  await new Promise((r) => setTimeout(r, 150));
+  const chunks = live.capture || [];
+  const sr = live.ctx?.sampleRate || 48000;
+  live.capture = null;
+  const audio = new Float32Array(chunks.reduce((n, c) => n + c.length, 0));
+  let o = 0;
+  for (const c of chunks) { audio.set(c, o); o += c.length; }
+  return { audio, sr };
+}
+
+$('calibBtn').onclick = async () => {
+  const btn = $('calibBtn');
+  btn.disabled = true;
+  const rec = await recordRaw(4, (s) => { btn.textContent = `Habla normal… ${s}`; });
+  btn.disabled = false;
+  btn.textContent = '🎤 Medir mi voz';
+  if (!rec) return;
+  const hz = medianPitch(rec.audio, rec.sr);
+  if (!hz || hz < 70 || hz > 350) {
+    status($('liveStatus'), 'No he podido medir bien tu voz. Prueba otra vez hablando de forma continua 4 segundos, sin ruido de fondo.', true);
+    return;
+  }
+  userHz = hz;
+  store.set('userHz', String(Math.round(hz)));
+  showCalibration();
+  applyVoice(selectedVoice);
+  status($('liveStatus'), 'Voz medida. Elige una voz y graba.');
 };
+
+/** Ecualización suave según la voz (más brillo en mujer/niños, más cuerpo en hombre). */
+async function finish(audio, sr, key) {
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!OAC || key === 'original') return audio;
+  const ctx = new OAC(1, audio.length, sr);
+  const buf = ctx.createBuffer(1, audio.length, sr);
+  buf.copyToChannel(audio, 0);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  const shelf = ctx.createBiquadFilter();
+  const v = VOICES[key];
+  if (v.formant >= 1.1) {
+    hp.frequency.value = 160;
+    shelf.type = 'highshelf'; shelf.frequency.value = 3500; shelf.gain.value = 3;
+  } else if (v.formant < 1) {
+    hp.frequency.value = 60;
+    shelf.type = 'lowshelf'; shelf.frequency.value = 180; shelf.gain.value = 3;
+  } else {
+    hp.frequency.value = 80;
+    shelf.type = 'peaking'; shelf.gain.value = 0;
+  }
+  src.connect(hp).connect(shelf).connect(ctx.destination);
+  src.start();
+  const rendered = await ctx.startRendering();
+  return rendered.getChannelData(0);
+}
+
+function toWav(audio, sr) {
+  const buf = new ArrayBuffer(44 + audio.length * 2);
+  const v = new DataView(buf);
+  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + audio.length * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, audio.length * 2, true);
+  for (let i = 0; i < audio.length; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, audio[i])) * 0x7fff, true);
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+$('recBtn').onclick = async () => {
+  const btn = $('recBtn');
+  btn.disabled = true;
+  const rec = await recordRaw(Number($('recSecs').value), (s) => { btn.textContent = `Grabando… ${s}`; });
+  btn.textContent = 'Convirtiendo…';
+  stopLive(); // en iPhone, con el micrófono abierto el sonido sale muy bajo
+  try {
+    if (!rec || !rec.audio.length) throw new Error('No se grabó audio.');
+    const v = VOICES[selectedVoice];
+    let out = rec.audio;
+    const pitchRatio = Math.pow(2, Number($('semi').value) / 12);
+    const formant = Number($('formant').value);
+    if (Math.abs(pitchRatio - 1) > 0.01 || Math.abs(formant - 1) > 0.01) {
+      out = changeVoice(rec.audio, rec.sr, { pitchRatio, formant, intonation: v.intonation });
+    }
+    out = await finish(out, rec.sr, selectedVoice);
+    const a = $('playback');
+    a.src = URL.createObjectURL(toWav(out, rec.sr));
+    a.hidden = false;
+    a.play().catch(() => {});
+    status($('liveStatus'), `Listo: así suena «${v.name}». Puedes volver a escucharlo o descargarlo desde el reproductor.`);
+  } catch (e) {
+    status($('liveStatus'), 'No se pudo convertir: ' + (e?.message || e), true);
+  }
+  btn.textContent = '● Grabar y convertir';
+  btn.disabled = false;
+};
+
+showCalibration();
+applyVoice('original');
 
 // ====================================================== MODO 2: agente
 const EXAMPLE_SCRIPT = `Empresa: Energía Clara.
