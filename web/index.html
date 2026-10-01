@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>VozDual Demo</title>
+  <meta name="description" content="Demo en el navegador de VozDual: cambio de voz en tiempo real y agente de voz con Claude." />
+  <meta name="theme-color" content="#111015" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><img src="icon.svg" alt="" width="28" height="28" /> VozDual <span class="tag">demo web</span></div>
+  </header>
+
+  <main>
+    <p class="intro">Esta página reproduce en el navegador cómo funciona la app de escritorio. El iPhone hace de ordenador: como Safari no puede crear un micrófono virtual, el resultado lo oyes por los auriculares o el altavoz en lugar de enviarse a una llamada.</p>
+
+    <div class="seg" role="tablist">
+      <button role="tab" id="tabLive" aria-selected="true">Conversión en vivo<small>hablo yo</small></button>
+      <button role="tab" id="tabAgent" aria-selected="false">Agente autónomo<small>habla la IA</small></button>
+    </div>
+
+    <!-- MODO 1 -->
+    <section id="live" class="card">
+      <h2>Conversión en vivo</h2>
+      <label>Micrófono
+        <select id="micSelect"><option value="">Micrófono por defecto</option></select>
+      </label>
+      <div class="row">
+        <label class="grow">Tono <output id="semiOut">+0 semitonos</output>
+          <input type="range" id="semi" min="-12" max="12" step="0.5" value="0" />
+        </label>
+      </div>
+      <div class="row">
+        <label class="grow">Timbre <output id="formOut">×1.00</output>
+          <input type="range" id="formant" min="0.75" max="1.35" step="0.01" value="1" />
+        </label>
+      </div>
+      <div class="presets">
+        <button class="chip" data-s="0" data-f="1">Original</button>
+        <button class="chip" data-s="-4" data-f="0.88">Más grave</button>
+        <button class="chip" data-s="4" data-f="1.12">Más aguda</button>
+        <button class="chip" data-s="0" data-f="0.85">Timbre adulto</button>
+        <button class="chip" data-s="7" data-f="1.25">Dibujo animado</button>
+      </div>
+      <label class="switch"><input type="checkbox" id="monitor" /> Escuchar en directo <small>(solo con auriculares, si no se acopla)</small></label>
+      <div class="actions">
+        <button id="liveStart" class="primary">Activar micrófono</button>
+        <button id="recBtn" class="ghost" disabled>● Grabar 5 s y escuchar</button>
+      </div>
+      <div class="meter"><div id="level"></div></div>
+      <p class="status" id="liveStatus">Detenido.</p>
+      <audio id="playback" controls hidden></audio>
+    </section>
+
+    <!-- MODO 2 -->
+    <section id="agent" class="card" hidden>
+      <h2>Agente autónomo</h2>
+      <p class="hint">Tú haces de cliente que recibe la llamada. Pulsa «Hablar», di tu respuesta y el agente te contesta en voz alta siguiendo el guion.</p>
+      <label>Guion de ventas
+        <textarea id="script" rows="7"></textarea>
+      </label>
+      <details>
+        <summary>Clave y modelo de Claude</summary>
+        <label>Clave API de Claude
+          <input id="apiKey" type="password" placeholder="sk-ant-…" autocomplete="off" />
+        </label>
+        <label class="switch"><input type="checkbox" id="rememberKey" /> Recordarla en este dispositivo</label>
+        <p class="hint">La clave se usa solo desde este navegador para llamar a la API de Claude. Créala en <a href="https://platform.claude.com" target="_blank" rel="noopener">platform.claude.com</a>; cada llamada cuesta céntimos.</p>
+        <label>Modelo <input id="model" value="claude-opus-5-5" /></label>
+      </details>
+      <div class="actions">
+        <button id="callStart" class="primary">Empezar llamada</button>
+        <button id="talkBtn" class="talk" disabled>🎙 Hablar</button>
+        <button id="callEnd" class="ghost" disabled>Colgar</button>
+      </div>
+      <form id="typeForm" class="type" hidden>
+        <input id="typeInput" placeholder="Escribe lo que dirías…" />
+        <button class="ghost">Enviar</button>
+      </form>
+      <p class="status" id="agentStatus">Listo.</p>
+    </section>
+
+    <section class="card">
+      <h2>Transcripción</h2>
+      <div id="log" class="log" aria-live="polite"></div>
+    </section>
+
+    <p class="foot">Código: <a href="https://github.com/prueba-png/AuraFace" target="_blank" rel="noopener">github.com/prueba-png/AuraFace</a>. La voz clonada (RVC) solo está en la app de escritorio. El agente siempre se presenta como IA.</p>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

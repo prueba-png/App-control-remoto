@@ -13,6 +13,13 @@ Todo funciona en tu ordenador y es gratuito **excepto la API de Claude**, que se
 (una llamada típica cuesta céntimos). El resto (Whisper, Piper, RVC, la app) es de código
 abierto y no tiene coste.
 
+## Demo en el navegador (también en iPhone)
+
+https://prueba-png.github.io/AuraFace/ — prueba el cambio de voz en tiempo real y el agente
+(con tu clave de Claude) desde el navegador. Es una demo: el resultado se oye en el propio
+dispositivo, porque un navegador no puede crear un micrófono virtual para otras apps. Su
+código está en `web/`.
+
 ## Estructura
 
 ```
