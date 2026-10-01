@@ -1,4 +1,5 @@
 import { Anthropic } from './vendor/anthropic-sdk-0.131.0.js';
+import { OfflineAgent } from './offline-agent.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -315,22 +316,29 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 const call = { client: null, messages: [], system: '', active: false, busy: false, rec: null };
 
+// Sin clave guardada, se propone el modo gratis.
+$('freeMode').checked = !$('apiKey').value.trim();
+$('freeMode').onchange = () => { $('keyBox').hidden = $('freeMode').checked; };
+$('keyBox').hidden = $('freeMode').checked;
+
 $('callStart').onclick = () => {
+  const free = $('freeMode').checked;
   const key = $('apiKey').value.trim();
-  if (!key) {
-    status($('agentStatus'), 'Pon tu clave de Claude en «Clave y modelo de Claude».', true);
-    document.querySelector('#agent details').open = true;
+  if (!free && !key) {
+    status($('agentStatus'), 'Pon tu clave de Claude en «Clave y modelo de Claude» o activa el modo prueba gratis.', true);
+    $('keyBox').open = true;
     return;
   }
-  if ($('rememberKey').checked) store.set('apiKey', key);
+  if (!free && $('rememberKey').checked) store.set('apiKey', key);
   const text = $('script').value.trim() || EXAMPLE_SCRIPT;
   const opening = openingLine(text);
-  call.client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });
+  call.offline = free ? new OfflineAgent(text) : null;
+  call.client = free ? null : new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });
   call.system = systemPrompt(text, opening);
   call.messages = [];
   call.active = true;
   $('log').innerHTML = '';
-  log('info', 'Llamada iniciada. El agente descuelga…');
+  log('info', free ? 'Llamada de prueba (modo gratis, sin IA). El agente descuelga…' : 'Llamada iniciada. El agente descuelga…');
   log('agente', opening);
   emptyTurns = 0;
   speak(opening).then(() => (SR ? listenNext() : status($('agentStatus'), 'Tu turno: escribe tu respuesta.')));
@@ -448,7 +456,11 @@ async function handleUser(text) {
     speaking = speaking.then(() => (call.active ? speak(s) : null));
   };
   const t0 = performance.now();
-  try {
+  if (call.offline) {
+    await new Promise((r) => setTimeout(r, 400)); // pausa breve, como alguien que piensa
+    call.offline.reply(text).forEach(say);
+    call.messages.pop();
+  } else try {
     const stream = call.client.beta.messages.stream({
       model: $('model').value.trim() || 'claude-opus-5-5',
       max_tokens: 1024, // respuestas habladas, deliberadamente cortas
