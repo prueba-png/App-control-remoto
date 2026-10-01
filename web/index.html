@@ -28,6 +28,21 @@
       <label>Micrófono
         <select id="micSelect"><option value="">Micrófono por defecto</option></select>
       </label>
+      <label>Tu voz real
+        <select id="baseVoice">
+          <option value="m">Soy hombre (voz grave)</option>
+          <option value="f">Soy mujer (voz aguda)</option>
+        </select>
+      </label>
+      <div class="presets" id="presets">
+        <button class="chip" data-p="original">Original</button>
+        <button class="chip" data-p="mujer">👩 Mujer</button>
+        <button class="chip" data-p="nino">👦 Niño pequeño</button>
+        <button class="chip" data-p="nina">👧 Niña pequeña</button>
+        <button class="chip" data-p="empresario">👔 Empresario</button>
+        <button class="chip" data-p="dibujo">Dibujo animado</button>
+      </div>
+      <p class="hint" id="presetHint">Elige una voz. Después puedes afinarla con los deslizadores de abajo.</p>
       <div class="row">
         <label class="grow">Tono <output id="semiOut">+0 semitonos</output>
           <input type="range" id="semi" min="-12" max="12" step="0.5" value="0" />
@@ -35,17 +50,10 @@
       </div>
       <div class="row">
         <label class="grow">Timbre <output id="formOut">×1.00</output>
-          <input type="range" id="formant" min="0.75" max="1.35" step="0.01" value="1" />
+          <input type="range" id="formant" min="0.75" max="1.5" step="0.01" value="1" />
         </label>
       </div>
-      <div class="presets">
-        <button class="chip" data-s="0" data-f="1">Original</button>
-        <button class="chip" data-s="-4" data-f="0.88">Más grave</button>
-        <button class="chip" data-s="4" data-f="1.12">Más aguda</button>
-        <button class="chip" data-s="0" data-f="0.85">Timbre adulto</button>
-        <button class="chip" data-s="7" data-f="1.25">Dibujo animado</button>
-      </div>
-      <label class="switch"><input type="checkbox" id="monitor" /> Escuchar en directo <small>(solo con auriculares, si no se acopla)</small></label>
+      <label class="switch"><input type="checkbox" id="monitor" /> <span>Escuchar en directo <small>(solo con auriculares, si no se acopla)</small></span></label>
       <div class="actions">
         <button id="liveStart" class="primary">Activar micrófono</button>
         <button id="recBtn" class="ghost" disabled>● Grabar 5 s y escuchar</button>

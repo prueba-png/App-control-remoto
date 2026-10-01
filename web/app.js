@@ -47,11 +47,29 @@ function sendParams() {
 }
 $('semi').oninput = sendParams;
 $('formant').oninput = sendParams;
-document.querySelectorAll('.chip').forEach((c) => (c.onclick = () => {
-  $('semi').value = c.dataset.s;
-  $('formant').value = c.dataset.f;
+// Voces predefinidas: [semitonos, timbre] según si tu voz real es de hombre o de mujer.
+// El tono marca lo agudo o grave; el timbre (formantes) el "tamaño" de quien habla.
+const PRESETS = {
+  original: { name: 'Original', m: [0, 1], f: [0, 1], hint: 'Tu voz sin cambios.' },
+  mujer: { name: 'Mujer', m: [5, 1.17], f: [1, 1.03], hint: 'Tono más agudo y timbre más ligero.' },
+  nino: { name: 'Niño pequeño', m: [8, 1.3], f: [3, 1.14], hint: 'Agudo y con timbre pequeño. Habla rápido y con frases cortas para que suene más natural.' },
+  nina: { name: 'Niña pequeña', m: [10, 1.38], f: [5, 1.2], hint: 'La más aguda. Sube un poco la entonación al hablar.' },
+  empresario: { name: 'Empresario', m: [-2, 0.92], f: [-7, 0.83], hint: 'Más grave y con más cuerpo. El aplomo lo pones tú: habla despacio, seguro y sin prisa.' },
+  dibujo: { name: 'Dibujo animado', m: [12, 1.45], f: [7, 1.3], hint: 'Exagerado, para jugar.' },
+};
+let currentPreset = 'original';
+function applyPreset(key) {
+  currentPreset = key;
+  const p = PRESETS[key];
+  const [s, f] = p[$('baseVoice').value];
+  $('semi').value = s;
+  $('formant').value = f;
+  document.querySelectorAll('#presets .chip').forEach((c) => c.classList.toggle('on', c.dataset.p === key));
+  $('presetHint').textContent = `${p.name}: ${p.hint}`;
   sendParams();
-}));
+}
+document.querySelectorAll('#presets .chip').forEach((c) => (c.onclick = () => applyPreset(c.dataset.p)));
+$('baseVoice').onchange = () => applyPreset(currentPreset);
 $('monitor').onchange = () => { if (live.gain) live.gain.gain.value = $('monitor').checked ? 1 : 0; };
 
 async function fillMics() {
