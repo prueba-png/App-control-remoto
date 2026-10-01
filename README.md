@@ -3,9 +3,7 @@
 Crea vídeos hiperrealistas **con tu propio rostro** a partir de una foto y un texto.
 Gratis, sin instalar nada y pensado para principiantes.
 
-**Abrir la app:** https://prueba-png.github.io/App-control-remoto/
-(si renombras el repositorio a `AuraFace`, la dirección pasa a ser
-`https://prueba-png.github.io/AuraFace/`).
+**Abrir la app:** https://prueba-png.github.io/AuraFace/
 
 ## Cómo se usa
 
