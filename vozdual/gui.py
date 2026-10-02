@@ -23,6 +23,20 @@ MODE_LIVE = "Conversión en vivo (hablo yo)"
 MODE_AGENT = "Agente autónomo (habla la IA)"
 WHISPER_SIZES = ["tiny", "base", "small", "medium", "large-v3", "turbo"]
 
+# Voces del motor de tono y timbre: tono objetivo (Hz) y timbre (formantes).
+# Se aplican sobre tu tono (hombre ~115 Hz, mujer ~205 Hz) para salir a su altura real.
+PERSONAS = {
+    "mujerGrave": (175, 1.12), "mujer": (205, 1.17), "mujerAguda": (235, 1.20),
+    "nina": (300, 1.38), "nino": (275, 1.32),
+    "hombreGrave": (95, 0.90), "hombreJoven": (135, 1.03), "empresario": (98, 0.92),
+}
+PERSONAS_UI = [
+    ("hombreGrave", "Hombre grave"), ("empresario", "Empresario"),
+    ("hombreJoven", "Hombre joven"), ("mujerGrave", "Mujer grave"),
+    ("mujer", "Mujer"), ("mujerAguda", "Mujer aguda"),
+    ("nino", "Niño"), ("nina", "Niña"),
+]
+
 
 class App(ctk.CTk):
     def __init__(self):
@@ -104,14 +118,30 @@ class App(ctk.CTk):
         label("Motor de voz")
         self.engine_menu = place(ctk.CTkOptionMenu(side, values=ENGINES, command=lambda _: self._apply_engine()))
         self.engine_menu.set(self.cfg.engine if self.cfg.engine in ENGINES else ENGINES[1])
+
+        # Voces rápidas (motor de tono y timbre): ajustan tono y timbre en directo.
+        label("Mi voz es…")
+        self.base_voice = place(ctk.CTkOptionMenu(side, values=["De hombre (grave)", "De mujer (aguda)"],
+                                                  command=lambda _: self._apply_persona(self._persona)))
+        self.base_voice.set("De mujer (aguda)" if self.cfg.base_voice == "f" else "De hombre (grave)")
+        self.persona_frame = ctk.CTkFrame(side, fg_color="transparent")
+        self.persona_frame.grid_columnconfigure((0, 1), weight=1)
+        place(self.persona_frame)
+        self._persona = None
+        for i, (key, text) in enumerate(PERSONAS_UI):
+            ctk.CTkButton(self.persona_frame, text=text, height=28, fg_color="transparent", border_width=1,
+                          text_color=("gray10", "gray90"),
+                          command=lambda k=key: self._apply_persona(k)).grid(
+                row=i // 2, column=i % 2, sticky="ew", padx=2, pady=2)
+
         self.semi_label = ctk.CTkLabel(side, anchor="w")
         self.semi_label.grid(row=r, column=0, sticky="ew"); r += 1
-        self.semi = place(ctk.CTkSlider(side, from_=-12, to=12, number_of_steps=48,
+        self.semi = place(ctk.CTkSlider(side, from_=-18, to=18, number_of_steps=72,
                                         command=lambda v: self._update_sliders()))
         self.semi.set(self.cfg.semitones)
         self.formant_label = ctk.CTkLabel(side, anchor="w")
         self.formant_label.grid(row=r, column=0, sticky="ew"); r += 1
-        self.formant = place(ctk.CTkSlider(side, from_=0.75, to=1.35, number_of_steps=60,
+        self.formant = place(ctk.CTkSlider(side, from_=0.75, to=1.5, number_of_steps=75,
                                            command=lambda v: self._update_sliders()))
         self.formant.set(self.cfg.formant)
 
@@ -263,8 +293,23 @@ class App(ctk.CTk):
     def _apply_engine(self):
         eng = self.engine_menu.get()
         self.rvc_frame.grid() if eng == RVCOnnxConverter.name else self.rvc_frame.grid_remove()
-        state = "normal" if eng == PitchFormantConverter.name else "disabled"
-        self.formant.configure(state=state)
+        pitch = eng == PitchFormantConverter.name
+        self.formant.configure(state="normal" if pitch else "disabled")
+        self.persona_frame.grid() if pitch else self.persona_frame.grid_remove()
+
+    def _base_hz(self):
+        return 205.0 if self.base_voice.get().startswith("De mujer") else 115.0
+
+    def _apply_persona(self, key):
+        self._persona = key
+        if key is None or key not in PERSONAS:
+            return
+        import math
+        hz, formant = PERSONAS[key]
+        semis = max(-18, min(18, round(12 * math.log2(hz / self._base_hz()) * 2) / 2))
+        self.semi.set(semis)
+        self.formant.set(formant)
+        self._update_sliders()
 
     def _update_sliders(self):
         self.semi_label.configure(text=f"Tono: {self.semi.get():+.1f} semitonos")
@@ -285,6 +330,7 @@ class App(ctk.CTk):
         c.call_audio_device = real(self.call_menu.get())
         c.virtual_mic_device = real(self.out_menu.get())
         c.engine = self.engine_menu.get()
+        c.base_voice = "f" if self.base_voice.get().startswith("De mujer") else "m"
         c.semitones = round(float(self.semi.get()), 2)
         c.formant = round(float(self.formant.get()), 3)
         c.rvc_model = self.rvc_model.get().strip()
