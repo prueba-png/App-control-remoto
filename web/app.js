@@ -4,6 +4,10 @@ import { changeVoice, medianPitch } from './voice-hq.js';
 import { listVoices, convert as elConvert, ElevenLabsError, matchPersona } from './voice-ai.js';
 
 const $ = (id) => document.getElementById(id);
+
+// Si algo falla en segundo plano, que se vea en la transcripción en vez de quedarse mudo.
+window.addEventListener('error', (e) => { try { log('error', 'Fallo: ' + (e.message || e.error || e)); } catch {} });
+window.addEventListener('unhandledrejection', (e) => { try { log('error', 'Fallo: ' + (e.reason?.message || e.reason || e)); } catch {} });
 const store = {
   get(k, d = '') { try { return localStorage.getItem('vozdual:' + k) ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('vozdual:' + k, v); } catch { /* sin almacenamiento */ } },
@@ -487,14 +491,25 @@ $('testVoice').onclick = () => {
 
 function speak(text) {
   return new Promise((resolve) => {
-    if (!('speechSynthesis' in window)) return resolve();
+    if (!('speechSynthesis' in window) || !text) return resolve();
+    let done = false;
+    const finish = () => { if (!done) { done = true; clearTimeout(timer); resolve(); } };
     const u = new SpeechSynthesisUtterance(text);
     const v = currentVoice();
     u.lang = v?.lang || 'es-ES';
     if (v) u.voice = v;
     u.rate = Number($('rate').value) || 1;
-    u.onend = u.onerror = () => resolve();
-    speechSynthesis.speak(u);
+    u.onend = u.onerror = finish;
+    // Safari en iPhone a veces no dispara onend: resolvemos igual tras un máximo.
+    const maxMs = Math.min(30000, 2500 + text.length * 120);
+    const timer = setTimeout(finish, maxMs);
+    try {
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+      speechSynthesis.resume(); // iOS a veces arranca en pausa
+    } catch {
+      finish();
+    }
   });
 }
 
@@ -516,31 +531,61 @@ document.querySelectorAll('#agentMode button').forEach((b) =>
 setAgentMode(false);
 
 $('callStart').onclick = () => {
-  const free = $('freeMode').checked;
-  const key = $('apiKey').value.trim();
-  if (!free && !key) {
-    status($('agentStatus'), 'Pega tu clave de Claude (sk-ant-…) en el recuadro de arriba, o pulsa «Gratis».', true);
-    return;
+  try {
+    const free = $('freeMode').checked;
+    const key = $('apiKey').value.trim();
+    if (!free && !key) {
+      status($('agentStatus'), 'Pega tu clave de Claude (sk-ant-…) en el recuadro de arriba, o pulsa «Gratis».', true);
+      return;
+    }
+    if (!free && !/^sk-ant-/.test(key)) {
+      status($('agentStatus'), 'Esa clave no parece de Claude (debe empezar por sk-ant-).', true);
+      return;
+    }
+    if (!free && $('rememberKey').checked) store.set('apiKey', key);
+    // Desbloquea la voz del sistema dentro del toque del usuario (obligatorio en iPhone).
+    unlockSpeech();
+    const text = $('script').value.trim() || EXAMPLE_SCRIPT;
+    const opening = openingLine(text);
+    call.offline = free ? new OfflineAgent(text) : null;
+    call.client = free ? null : new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });
+    call.system = systemPrompt(text, opening);
+    call.messages = [];
+    call.active = true;
+    call.busy = false;
+    $('log').innerHTML = '';
+    log('info', free ? 'Llamada de prueba (modo gratis, sin IA). El agente descuelga…' : 'Llamada iniciada. El agente descuelga…');
+    log('agente', opening);
+    emptyTurns = 0;
+    $('callStart').disabled = true;
+    $('callEnd').disabled = false;
+    $('talkBtn').hidden = !SR;
+    $('talkBtn').disabled = !SR;
+    $('typeForm').hidden = !!SR;
+    status($('agentStatus'), 'El agente está hablando…');
+    speak(opening).then(() => {
+      if (!call.active) return;
+      if (SR) listenNext();
+      else status($('agentStatus'), 'Tu turno: escribe tu respuesta abajo y pulsa «Decir».');
+    });
+  } catch (e) {
+    log('error', 'No se pudo empezar la llamada: ' + (e?.message || e));
+    status($('agentStatus'), 'No se pudo empezar la llamada: ' + (e?.message || e), true);
+    $('callStart').disabled = false;
   }
-  if (!free && $('rememberKey').checked) store.set('apiKey', key);
-  const text = $('script').value.trim() || EXAMPLE_SCRIPT;
-  const opening = openingLine(text);
-  call.offline = free ? new OfflineAgent(text) : null;
-  call.client = free ? null : new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });
-  call.system = systemPrompt(text, opening);
-  call.messages = [];
-  call.active = true;
-  $('log').innerHTML = '';
-  log('info', free ? 'Llamada de prueba (modo gratis, sin IA). El agente descuelga…' : 'Llamada iniciada. El agente descuelga…');
-  log('agente', opening);
-  emptyTurns = 0;
-  speak(opening).then(() => (SR ? listenNext() : status($('agentStatus'), 'Tu turno: escribe tu respuesta.')));
-  $('callStart').disabled = true;
-  $('callEnd').disabled = false;
-  $('talkBtn').disabled = !SR;
-  $('typeForm').hidden = !!SR;
-  status($('agentStatus'), 'El agente está hablando…');
 };
+
+// En iPhone la voz del sistema solo "despierta" si se llama dentro de un toque.
+let speechUnlocked = false;
+function unlockSpeech() {
+  if (speechUnlocked || !('speechSynthesis' in window)) return;
+  try {
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    speechSynthesis.speak(u);
+    speechUnlocked = true;
+  } catch { /* nada */ }
+}
 
 $('callEnd').onclick = () => endCall('Has colgado.');
 
@@ -694,8 +739,8 @@ async function handleUser(text) {
   if (!call.active) return;
   if (finished) return endCall('El agente ha cerrado la conversación.');
   $('talkBtn').disabled = !SR;
-  if (SR) listenNext();
-  else status($('agentStatus'), 'Tu turno: escribe tu respuesta.');
+  if (SR) { listenNext(); }
+  else { $('typeForm').hidden = false; status($('agentStatus'), 'Tu turno: escribe tu respuesta y pulsa «Decir».'); }
 }
 
 function apiError(e) {
