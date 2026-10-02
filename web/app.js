@@ -1,7 +1,7 @@
 import { Anthropic } from './vendor/anthropic-sdk-0.131.0.js';
 import { OfflineAgent } from './offline-agent.js';
 import { changeVoice, medianPitch } from './voice-hq.js';
-import { listVoices, convert as elConvert, ElevenLabsError } from './voice-ai.js';
+import { listVoices, convert as elConvert, ElevenLabsError, matchPersona } from './voice-ai.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -284,6 +284,19 @@ $('elRemember').checked = !!store.get('elKey');
 $('elRemember').onchange = () => { if (!$('elRemember').checked) store.del('elKey'); else store.set('elKey', $('elKey').value.trim()); };
 $('elKey').onchange = () => { if ($('elRemember').checked) store.set('elKey', $('elKey').value.trim()); };
 
+let elVoices = [];
+
+document.querySelectorAll('#elPersonas .chip').forEach((c) => (c.onclick = () => {
+  if (!elVoices.length) { status($('elStatus'), 'Pulsa «Cargar mis voces» primero.', true); return; }
+  const { voice, score } = matchPersona(elVoices, c.dataset.p);
+  if (!voice) { status($('elStatus'), 'No encuentro una voz para eso.', true); return; }
+  $('elVoice').value = voice.id;
+  store.set('elVoiceId', voice.id);
+  document.querySelectorAll('#elPersonas .chip').forEach((x) => x.classList.toggle('on', x === c));
+  const warn = score < 3 ? ' (tu biblioteca no tiene una voz muy parecida; prueba a añadir una en ElevenLabs)' : '';
+  status($('elStatus'), `Voz elegida: ${voice.name}.${warn}`);
+}));
+
 $('elLoad').onclick = async () => {
   const key = $('elKey').value.trim();
   if (!key) { status($('elStatus'), 'Pon tu clave de ElevenLabs.', true); return; }
@@ -292,6 +305,7 @@ $('elLoad').onclick = async () => {
   btn.disabled = true; btn.textContent = 'Cargando…';
   try {
     const voices = await listVoices(key);
+    elVoices = voices;
     const sel = $('elVoice');
     sel.innerHTML = '';
     const groups = {};
@@ -310,7 +324,8 @@ $('elLoad').onclick = async () => {
     }
     const saved = store.get('elVoiceId');
     if (saved && voices.some((v) => v.id === saved)) sel.value = saved;
-    status($('elStatus'), `${voices.length} voces cargadas. Elige una y graba.`);
+    $('elPersonas').hidden = false;
+    status($('elStatus'), `${voices.length} voces cargadas. Toca una persona o elige una voz y graba.`);
   } catch (e) {
     status($('elStatus'), e instanceof ElevenLabsError ? e.message : 'No se pudieron cargar las voces: ' + (e?.message || e), true);
   } finally {

@@ -37,7 +37,18 @@
         </label>
         <label class="switch"><input type="checkbox" id="elRemember" /> <span>Recordarla en este dispositivo</span></label>
         <div class="actions"><button id="elLoad" class="ghost">Cargar mis voces</button></div>
-        <label>Voz
+        <div class="presets" id="elPersonas" hidden>
+          <button class="chip" data-p="hombreGrave">🧔 Hombre grave</button>
+          <button class="chip" data-p="hombre">👨 Hombre</button>
+          <button class="chip" data-p="chicoJoven">🧑 Chico joven</button>
+          <button class="chip" data-p="empresario">👔 Empresario</button>
+          <button class="chip" data-p="mujerGrave">👩 Mujer grave</button>
+          <button class="chip" data-p="mujer">👩 Mujer</button>
+          <button class="chip" data-p="chicaJoven">👩 Chica joven</button>
+          <button class="chip" data-p="nino">👦 Niño</button>
+          <button class="chip" data-p="nina">👧 Niña</button>
+        </div>
+        <label>Voz concreta
           <select id="elVoice"><option value="">Pulsa «Cargar mis voces»</option></select>
         </label>
         <label>Duración de la grabación

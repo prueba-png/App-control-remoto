@@ -66,3 +66,40 @@ export const PERSONA_HINTS = {
   nina: ['child', 'female'],
   nino: ['child', 'male'],
 };
+
+// Perfiles de persona → cómo puntuar las voces de la biblioteca para cada uno.
+const PERSONAS = {
+  hombreGrave: { name: 'Hombre grave', gender: 'male', age: ['old', 'middle'], words: ['deep', 'grave', 'mature', 'strong', 'low'] },
+  hombre: { name: 'Hombre', gender: 'male', age: ['middle'], words: [] },
+  chicoJoven: { name: 'Chico joven', gender: 'male', age: ['young'], words: ['young'] },
+  empresario: { name: 'Empresario', gender: 'male', age: ['middle', 'old'], words: ['confident', 'deep', 'professional', 'authorit', 'news'] },
+  mujerGrave: { name: 'Mujer grave', gender: 'female', age: ['old', 'middle'], words: ['deep', 'grave', 'mature', 'warm', 'low'] },
+  mujer: { name: 'Mujer', gender: 'female', age: ['middle'], words: [] },
+  chicaJoven: { name: 'Chica joven', gender: 'female', age: ['young'], words: ['young'] },
+  nino: { name: 'Niño', gender: 'male', age: ['young'], words: ['child', 'kid', 'boy'] },
+  nina: { name: 'Niña', gender: 'female', age: ['young'], words: ['child', 'kid', 'girl'] },
+};
+
+export function personaList() {
+  return Object.entries(PERSONAS).map(([id, p]) => ({ id, name: p.name }));
+}
+
+/** Elige la mejor voz de la lista para una persona. Devuelve {voice, score}. */
+export function matchPersona(voices, personaId) {
+  const p = PERSONAS[personaId];
+  if (!p) return { voice: null, score: 0 };
+  const text = (v) => `${v.name} ${Object.values(v.labels || {}).join(' ')}`.toLowerCase();
+  let best = null;
+  let bestScore = -1;
+  for (const v of voices) {
+    const g = (v.labels.gender || '').toLowerCase();
+    const a = (v.labels.age || '').toLowerCase().replace('_', ' ');
+    const t = text(v);
+    let score = 0;
+    if (g && p.gender) score += g === p.gender ? 3 : -4;
+    if (a) score += p.age.some((x) => a.includes(x)) ? 2 : 0;
+    for (const w of p.words) if (t.includes(w)) score += 1.5;
+    if (score > bestScore) { bestScore = score; best = v; }
+  }
+  return { voice: best, score: bestScore };
+}
