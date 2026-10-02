@@ -27,6 +27,7 @@ class Settings:
     # Voz
     engine: str = "Tono y timbre (DSP)"
     base_voice: str = "m"
+    measured_hz: float = 0.0
     semitones: float = 0.0
     formant: float = 1.0
     rvc_model: str = ""

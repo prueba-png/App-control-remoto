@@ -120,7 +120,14 @@ class App(ctk.CTk):
         self.engine_menu.set(self.cfg.engine if self.cfg.engine in ENGINES else ENGINES[1])
 
         # Voces rápidas (motor de tono y timbre): ajustan tono y timbre en directo.
-        label("Mi voz es…")
+        self.measured_hz = float(self.cfg.measured_hz or 0)
+        self.measure_btn = place(ctk.CTkButton(
+            side, text="🎤 Medir mi voz", fg_color="transparent", border_width=1,
+            text_color=("gray10", "gray90"), command=self._measure_voice))
+        self.measure_lbl = ctk.CTkLabel(side, anchor="w", wraplength=360, justify="left")
+        self.measure_lbl.grid(row=r, column=0, sticky="ew"); r += 1
+        self.base_voice_lbl = ctk.CTkLabel(side, text="Si no la mides, ¿tu voz es…?", anchor="w")
+        self.base_voice_lbl.grid(row=r, column=0, sticky="ew"); r += 1
         self.base_voice = place(ctk.CTkOptionMenu(side, values=["De hombre (grave)", "De mujer (aguda)"],
                                                   command=lambda _: self._apply_persona(self._persona)))
         self.base_voice.set("De mujer (aguda)" if self.cfg.base_voice == "f" else "De hombre (grave)")
@@ -210,6 +217,7 @@ class App(ctk.CTk):
 
         self._apply_engine()
         self._update_sliders()
+        self._show_measure()
 
     def _file_row(self, parent, row, title, value, types):
         ctk.CTkLabel(parent, text=title, anchor="w").grid(row=row, column=0, sticky="ew")
@@ -298,7 +306,48 @@ class App(ctk.CTk):
         self.persona_frame.grid() if pitch else self.persona_frame.grid_remove()
 
     def _base_hz(self):
+        if self.measured_hz:
+            return self.measured_hz
         return 205.0 if self.base_voice.get().startswith("De mujer") else 115.0
+
+    def _show_measure(self):
+        if self.measured_hz:
+            kind = "voz grave, de hombre" if self.measured_hz < 165 else "voz aguda, de mujer"
+            self.measure_lbl.configure(text=f"Tu tono medido: {self.measured_hz:.0f} Hz ({kind}).")
+            self.base_voice_lbl.grid_remove()
+            self.base_voice.grid_remove()
+        else:
+            self.measure_lbl.configure(text="Sin medir: se usa un tono típico. Mídela para afinar las voces.")
+            self.base_voice_lbl.grid()
+            self.base_voice.grid()
+
+    def _measure_voice(self):
+        mic = ad.find(self.mic_menu.get(), "input")
+        if mic is None:
+            self._log("error", "Elige tu micrófono físico antes de medir.")
+            return
+        if self.running:
+            self._log("error", "Detén la conversión antes de medir tu voz.")
+            return
+        self.measure_btn.configure(state="disabled", text="Habla normal 4 s…")
+        threading.Thread(target=self._measure_worker, args=(mic.index,), daemon=True).start()
+
+    def _measure_worker(self, device):
+        import sounddevice as sd
+
+        from .dsp import resample, yin_f0
+
+        try:
+            sr = int(sd.query_devices(device)["default_samplerate"])
+            audio = sd.rec(int(4 * sr), samplerate=sr, channels=1, dtype="float32", device=device)
+            sd.wait()
+            x = resample(audio[:, 0], sr, 16000)
+            f0 = yin_f0(x, 16000, 160, 60.0, 400.0)
+            voiced = sorted(float(v) for v in f0 if v > 0)
+            hz = voiced[len(voiced) // 2] if len(voiced) >= 10 else 0.0
+            self.events.put(("measured", hz))
+        except Exception as e:  # noqa: BLE001
+            self.events.put(("measure_error", str(e)))
 
     def _apply_persona(self, key):
         self._persona = key
@@ -331,6 +380,7 @@ class App(ctk.CTk):
         c.virtual_mic_device = real(self.out_menu.get())
         c.engine = self.engine_menu.get()
         c.base_voice = "f" if self.base_voice.get().startswith("De mujer") else "m"
+        c.measured_hz = round(self.measured_hz, 1)
         c.semitones = round(float(self.semi.get()), 2)
         c.formant = round(float(self.formant.get()), 3)
         c.rvc_model = self.rvc_model.get().strip()
@@ -463,6 +513,19 @@ class App(ctk.CTk):
                             self._stop()
                     else:
                         self._log(k, t)
+                elif kind == "measured":
+                    self.measure_btn.configure(state="normal", text="🎤 Medir mi voz")
+                    if 60 <= float(data) <= 350:
+                        self.measured_hz = float(data)
+                        self._show_measure()
+                        self._apply_persona(self._persona)
+                        self._log("info", f"Voz medida: {self.measured_hz:.0f} Hz.")
+                    else:
+                        self._log("error", "No he podido medir bien tu voz. Inténtalo otra vez, "
+                                           "hablando seguido 4 segundos y sin ruido de fondo.")
+                elif kind == "measure_error":
+                    self.measure_btn.configure(state="normal", text="🎤 Medir mi voz")
+                    self._log("error", f"No se pudo medir: {data}")
                 elif kind in ("info", "error"):
                     self._log(kind, str(data))
                     if kind == "error" and self.running is not None:
