@@ -134,14 +134,31 @@
       <label>Nombre del agente
         <input id="agentName" value="Laura" />
       </label>
-      <label>Voz del agente
-        <select id="voiceSelect"></select>
+      <label>Tipo de voz del agente
+        <select id="voiceEngine">
+          <option value="eleven">Voz realista con IA (ElevenLabs) — como una persona</option>
+          <option value="system">Voz del sistema (gratis)</option>
+        </select>
       </label>
+
+      <div id="elAgentBox">
+        <p class="hint">Voz muy realista, suena como una persona hablando. Necesita tu clave gratuita de <a href="https://elevenlabs.io" target="_blank" rel="noopener">ElevenLabs</a> (perfil → API Keys). La capa gratuita da unos minutos al mes.</p>
+        <label>Clave de ElevenLabs <small>(sk_…)</small>
+          <input id="elAgentKey" type="password" placeholder="sk_…" autocomplete="off" />
+        </label>
+        <div class="actions"><button type="button" id="elAgentLoad" class="ghost">Cargar voces</button></div>
+        <label>Voz <select id="elAgentVoice"><option value="">Pulsa «Cargar voces»</option></select></label>
+      </div>
+
+      <div id="sysAgentBox" hidden>
+        <label>Voz del sistema <select id="voiceSelect"></select></label>
+        <p class="hint">Para que suene mejor en iPhone: Ajustes → Accesibilidad → Contenido leído → Voces → Español → descarga una voz <b>Mejorada</b> o <b>Premium</b> y recarga.</p>
+      </div>
+
       <label>Velocidad al hablar <output id="rateOut">×1.00</output>
         <input type="range" id="rate" min="0.8" max="1.25" step="0.05" value="1" />
       </label>
       <div class="actions"><button id="testVoice" class="ghost">▶ Probar voz</button></div>
-      <p class="hint">Para una voz mucho más real en iPhone: Ajustes → Accesibilidad → Contenido leído → Voces → Español → descarga una voz <b>Mejorada</b> o <b>Premium</b> (por ejemplo Mónica o Jorge) y recarga esta página.</p>
       <label class="switch"><input type="checkbox" id="handsFree" checked /> <span>Manos libres <small>(escucha sola cuando el agente termina de hablar)</small></span></label>
 
       <div class="seg seg2" role="tablist" id="agentMode">

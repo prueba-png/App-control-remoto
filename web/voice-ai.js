@@ -103,3 +103,19 @@ export function matchPersona(voices, personaId) {
   }
   return { voice: best, score: bestScore };
 }
+
+// Texto → voz realista (ElevenLabs). Devuelve un Blob de audio (mp3).
+// Modelos: eleven_flash_v2_5 (rápido, multilingüe) o eleven_multilingual_v2 (más calidad).
+export async function tts(apiKey, voiceId, text, { model = 'eleven_flash_v2_5' } = {}) {
+  const res = await fetch(`${BASE}/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
+    method: 'POST',
+    headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text,
+      model_id: model,
+      voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.3, use_speaker_boost: true },
+    }),
+  });
+  if (!res.ok) throw new ElevenLabsError(await readError(res));
+  return res.blob();
+}

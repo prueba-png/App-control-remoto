@@ -1,7 +1,7 @@
 import { Anthropic } from './vendor/anthropic-sdk-0.131.0.js';
 import { OfflineAgent } from './offline-agent.js';
 import { changeVoice, medianPitch } from './voice-hq.js';
-import { listVoices, convert as elConvert, ElevenLabsError, matchPersona } from './voice-ai.js';
+import { listVoices, convert as elConvert, tts as elTts, ElevenLabsError, matchPersona } from './voice-ai.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -484,12 +484,70 @@ $('rateOut').value = `×${Number($('rate').value).toFixed(2)}`;
 $('rate').oninput = () => { $('rateOut').value = `×${Number($('rate').value).toFixed(2)}`; store.set('rate', $('rate').value); };
 $('agentName').value = store.get('agentName', 'Laura');
 $('agentName').onchange = () => store.set('agentName', $('agentName').value.trim());
+
+// ---- Voz del agente: realista (ElevenLabs) o del sistema -------------------
+const agentAudio = new Audio(); // un solo elemento, se desbloquea al pulsar
+function useElevenVoice() {
+  return $('voiceEngine').value === 'eleven' && $('elAgentKey').value.trim() && $('elAgentVoice').value;
+}
+function applyVoiceEngine() {
+  const el = $('voiceEngine').value === 'eleven';
+  $('elAgentBox').hidden = !el;
+  $('sysAgentBox').hidden = el;
+  store.set('voiceEngine', $('voiceEngine').value);
+}
+$('voiceEngine').value = store.get('voiceEngine', 'eleven');
+$('voiceEngine').onchange = applyVoiceEngine;
+applyVoiceEngine();
+
+$('elAgentKey').value = store.get('elKey', '');
+$('elAgentKey').onchange = () => store.set('elKey', $('elAgentKey').value.trim());
+$('elAgentLoad').onclick = async () => {
+  const key = $('elAgentKey').value.trim();
+  if (!key) { status($('agentStatus'), 'Pon tu clave de ElevenLabs.', true); return; }
+  store.set('elKey', key);
+  const btn = $('elAgentLoad');
+  btn.disabled = true; btn.textContent = 'Cargando…';
+  try {
+    const voices = await listVoices(key);
+    const sel = $('elAgentVoice');
+    sel.innerHTML = '';
+    for (const v of voices) {
+      const o = document.createElement('option');
+      o.value = v.id;
+      const tag = [v.labels.gender, v.labels.age].filter(Boolean).join(', ');
+      o.textContent = tag ? `${v.name} (${tag})` : v.name;
+      sel.append(o);
+    }
+    const saved = store.get('agentVoiceId');
+    if (saved && voices.some((v) => v.id === saved)) sel.value = saved;
+    status($('agentStatus'), `${voices.length} voces cargadas. Elige la voz del agente.`);
+  } catch (e) {
+    status($('agentStatus'), e instanceof ElevenLabsError ? e.message : 'No se pudieron cargar las voces: ' + (e?.message || e), true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Cargar voces';
+  }
+};
+$('elAgentVoice').onchange = () => store.set('agentVoiceId', $('elAgentVoice').value);
+
 $('testVoice').onclick = () => {
-  speechSynthesis.cancel();
+  unlockSpeech();
+  try { agentAudio.play().catch(() => {}); agentAudio.pause(); } catch { /* nada */ }
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
   speak(`Hola, soy ${agentName() || 'tu asistente'}. Así sonará mi voz durante la llamada.`);
 };
 
-function speak(text) {
+async function speakEleven(text) {
+  const blob = await elTts($('elAgentKey').value.trim(), $('elAgentVoice').value, text);
+  await new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    agentAudio.src = url;
+    agentAudio.onended = agentAudio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+    agentAudio.play().catch(() => resolve());
+  });
+}
+
+function speakSystem(text) {
   return new Promise((resolve) => {
     if (!('speechSynthesis' in window) || !text) return resolve();
     let done = false;
@@ -500,17 +558,23 @@ function speak(text) {
     if (v) u.voice = v;
     u.rate = Number($('rate').value) || 1;
     u.onend = u.onerror = finish;
-    // Safari en iPhone a veces no dispara onend: resolvemos igual tras un máximo.
     const maxMs = Math.min(30000, 2500 + text.length * 120);
     const timer = setTimeout(finish, maxMs);
     try {
       speechSynthesis.cancel();
       speechSynthesis.speak(u);
-      speechSynthesis.resume(); // iOS a veces arranca en pausa
-    } catch {
-      finish();
-    }
+      speechSynthesis.resume();
+    } catch { finish(); }
   });
+}
+
+async function speak(text) {
+  if (!text) return;
+  if (useElevenVoice()) {
+    try { await speakEleven(text); return; }
+    catch (e) { log('error', 'Voz realista no disponible, uso la del sistema: ' + (e?.message || e)); }
+  }
+  await speakSystem(text);
 }
 
 // --- reconocimiento de voz del sistema
@@ -577,7 +641,13 @@ $('callStart').onclick = () => {
 
 // En iPhone la voz del sistema solo "despierta" si se llama dentro de un toque.
 let speechUnlocked = false;
+const SILENT_MP3 = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQxAADB8AhSmxhIIEVCSiJrDCQBTcu3UrAIwUdkRgQbFAZC1CQEwTJ9mjRvBA4UOLD8nKVOWfh+UlK3z/177OXrfOdKl7pyn3Xf//WreyTEFNRTMuOTkuNVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV';
 function unlockSpeech() {
+  // Audio de ElevenLabs: hay que "despertar" el reproductor dentro del toque.
+  try {
+    agentAudio.src = SILENT_MP3;
+    agentAudio.play().then(() => agentAudio.pause()).catch(() => {});
+  } catch { /* nada */ }
   if (speechUnlocked || !('speechSynthesis' in window)) return;
   try {
     const u = new SpeechSynthesisUtterance(' ');
@@ -592,6 +662,7 @@ $('callEnd').onclick = () => endCall('Has colgado.');
 function endCall(msg) {
   call.active = false;
   call.rec?.abort();
+  try { agentAudio.pause(); } catch {}
   if ('speechSynthesis' in window) speechSynthesis.cancel();
   $('callStart').disabled = false;
   $('callEnd').disabled = true;

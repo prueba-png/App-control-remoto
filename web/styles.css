@@ -72,3 +72,10 @@ details > * + * { margin-top: 10px; }
 a { color: var(--accent); }
 
 .seg2 { grid-template-columns: 1fr 1fr; margin: 4px 0; }
+
+/* Selección, copiar/pegar y desplazamiento cómodos en móvil. */
+html { -webkit-text-size-adjust: 100%; }
+body { -webkit-overflow-scrolling: touch; overflow-x: hidden; }
+input, textarea { -webkit-user-select: text; user-select: text; }
+button, .chip, .seg button { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+textarea { -webkit-overflow-scrolling: touch; }
