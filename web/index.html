@@ -143,16 +143,24 @@
       <div class="actions"><button id="testVoice" class="ghost">▶ Probar voz</button></div>
       <p class="hint">Para una voz mucho más real en iPhone: Ajustes → Accesibilidad → Contenido leído → Voces → Español → descarga una voz <b>Mejorada</b> o <b>Premium</b> (por ejemplo Mónica o Jorge) y recarga esta página.</p>
       <label class="switch"><input type="checkbox" id="handsFree" checked /> <span>Manos libres <small>(escucha sola cuando el agente termina de hablar)</small></span></label>
-      <label class="switch"><input type="checkbox" id="freeMode" /> <span>Modo prueba gratis <small>(sin clave ni pagos: sigue el guion paso a paso, pero no entiende de verdad)</small></span></label>
-      <details id="keyBox">
-        <summary>Clave y modelo de Claude</summary>
-        <label>Clave API de Claude
+
+      <div class="seg seg2" role="tablist" id="agentMode">
+        <button type="button" role="tab" data-mode="claude" aria-selected="true">Con Claude<small>IA real</small></button>
+        <button type="button" role="tab" data-mode="free" aria-selected="false">Gratis<small>sin IA</small></button>
+      </div>
+
+      <div id="claudeBox">
+        <label>Clave API de Claude <small>(sk-ant-…)</small>
           <input id="apiKey" type="password" placeholder="sk-ant-…" autocomplete="off" />
         </label>
-        <label class="switch"><input type="checkbox" id="rememberKey" /> Recordarla en este dispositivo</label>
-        <p class="hint">La clave se usa solo desde este navegador para llamar a la API de Claude. Créala en <a href="https://platform.claude.com" target="_blank" rel="noopener">platform.claude.com</a>; cada llamada cuesta céntimos.</p>
-        <label>Modelo <input id="model" value="claude-opus-5-5" /></label>
-      </details>
+        <label class="switch"><input type="checkbox" id="rememberKey" /> <span>Recordarla en este dispositivo</span></label>
+        <p class="hint">La clave se usa solo desde este navegador para llamar a Claude. Créala en <a href="https://platform.claude.com" target="_blank" rel="noopener">platform.claude.com</a>; cada llamada cuesta céntimos.</p>
+        <details><summary>Modelo (avanzado)</summary>
+          <label>Modelo <input id="model" value="claude-opus-5-5" /></label>
+        </details>
+      </div>
+      <p class="hint" id="freeHint" hidden>Modo gratis: sin clave ni pagos. Sigue el guion paso a paso y reacciona a palabras clave, pero no entiende de verdad.</p>
+      <input type="checkbox" id="freeMode" hidden />
       <div class="actions">
         <button id="callStart" class="primary">Empezar llamada</button>
         <button id="talkBtn" class="talk" disabled>🎙 Hablar</button>

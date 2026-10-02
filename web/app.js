@@ -503,17 +503,23 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 const call = { client: null, messages: [], system: '', active: false, busy: false, rec: null };
 
-// Sin clave guardada, se propone el modo gratis.
-$('freeMode').checked = !$('apiKey').value.trim();
-$('freeMode').onchange = () => { $('keyBox').hidden = $('freeMode').checked; };
-$('keyBox').hidden = $('freeMode').checked;
+// Selector Con Claude / Gratis. Por defecto, Con Claude (la clave siempre visible).
+function setAgentMode(free) {
+  $('freeMode').checked = free;
+  document.querySelectorAll('#agentMode button').forEach((b) =>
+    b.setAttribute('aria-selected', String((b.dataset.mode === 'free') === free)));
+  $('claudeBox').hidden = free;
+  $('freeHint').hidden = !free;
+}
+document.querySelectorAll('#agentMode button').forEach((b) =>
+  (b.onclick = () => setAgentMode(b.dataset.mode === 'free')));
+setAgentMode(false);
 
 $('callStart').onclick = () => {
   const free = $('freeMode').checked;
   const key = $('apiKey').value.trim();
   if (!free && !key) {
-    status($('agentStatus'), 'Pon tu clave de Claude en «Clave y modelo de Claude» o activa el modo prueba gratis.', true);
-    $('keyBox').open = true;
+    status($('agentStatus'), 'Pega tu clave de Claude (sk-ant-…) en el recuadro de arriba, o pulsa «Gratis».', true);
     return;
   }
   if (!free && $('rememberKey').checked) store.set('apiKey', key);

@@ -70,3 +70,5 @@ details > * + * { margin-top: 10px; }
 .msg.error { border-color: var(--err); color: var(--err); }
 .foot { color: var(--muted); font-size: .8rem; padding-bottom: max(24px, env(safe-area-inset-bottom)); }
 a { color: var(--accent); }
+
+.seg2 { grid-template-columns: 1fr 1fr; margin: 4px 0; }
