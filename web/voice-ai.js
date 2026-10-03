@@ -46,6 +46,14 @@ export async function convert(apiKey, voiceId, wavBlob, { removeNoise = true } =
   form.append('audio', wavBlob, 'input.wav');
   form.append('model_id', STS_MODEL);
   form.append('remove_background_noise', String(removeNoise));
+  // Ajustes que mejoran la clonación: más parecido a la voz objetivo (similarity_boost
+  // alto) y más estable (menos "temblor"). Son los que más notan en el resultado.
+  form.append('voice_settings', JSON.stringify({
+    stability: 0.7,
+    similarity_boost: 0.95,
+    style: 0,
+    use_speaker_boost: true,
+  }));
   const res = await fetch(`${BASE}/speech-to-speech/${voiceId}?output_format=mp3_44100_128`, {
     method: 'POST',
     headers: { 'xi-api-key': apiKey },
